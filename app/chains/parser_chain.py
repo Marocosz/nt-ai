@@ -14,6 +14,7 @@ def create_parser_chain() -> Runnable:
     llm = get_llm()
     parser = JsonOutputParser()
 
+    # A cadeia agora é mais simples: o prompt só espera a 'query'.
     chain = PARSER_PROMPT | llm | parser
 
     return chain

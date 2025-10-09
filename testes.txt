@@ -1,0 +1,105 @@
+# ====================================================================================
+# ====================================================================================
+#
+#                     ROTEIRO DE TESTES - New Tracking AI
+#
+# Propósito do Arquivo:
+#
+# Este arquivo contém um conjunto de prompts para validar a capacidade do microsserviço
+# de IA de interpretar corretamente a intenção de busca do usuário e traduzi-la 
+# para um objeto JSON estruturado com os filtros (`NF`, `DE`, `ATE`, `TipoData`) 
+# que a API principal do New Tracking espera.
+#
+# Os testes focam na extração de entidades, tratamento de datas (absolutas e 
+# relativas) e na robustez do sistema a variações de linguagem.
+#
+# ====================================================================================
+# ====================================================================================
+
+
+# ====================================================================================
+# Suíte 1: Testes de Busca por Nota Fiscal Específica
+# ------------------------------------------------------------------------------------
+# Objetivo: Validar se a IA consegue isolar um número de Nota Fiscal e retornar
+# um JSON onde apenas o campo `NF` está preenchido, com os demais nulos.
+# ====================================================================================
+qual a nf 12345
+nf 98765
+me mostre a nota fiscal 55432
+
+
+# ====================================================================================
+# Suíte 2: Testes de Filtro por Datas Relativas
+# ------------------------------------------------------------------------------------
+# Objetivo: Verificar a capacidade da IA de entender termos relativos como "hoje",
+# "ontem" e "semana passada", e traduzi-los para o par `DE`/`ATE` correto, além
+# de identificar o `TipoData` solicitado.
+# ====================================================================================
+# Data de referência para os testes: 09 de Outubro de 2025
+
+# Testes com "hoje" (DE e ATE devem ser '2025-10-09')
+quais notas foram entregues hoje?
+mostre o que foi emitido hoje
+notas baixadas hoje
+
+# Testes com "ontem" (DE e ATE devem ser '2025-10-08')
+o que tem com data de agenda para ontem?
+notas previstas para ontem
+me dê as notas entregues ontem
+
+# Testes com "semana passada" (DE='2025-10-02', ATE='2025-10-09')
+o que foi baixado na última semana?
+notas emitidas nos últimos 7 dias
+mostre as notas com previsão real para a semana passada
+
+
+# ====================================================================================
+# Suíte 3: Testes de Filtro por Datas Absolutas (Intervalos)
+# ------------------------------------------------------------------------------------
+# Objetivo: Garantir que a IA consegue extrair corretamente um intervalo de datas
+# explícito, preenchendo `DE` e `ATE`, e identificar o `TipoData` associado.
+# ====================================================================================
+notas previstas entre 1 e 15 de setembro de 2025
+o que foi entregue de 01/09/2025 até 10/09/2025
+mostre as notas emitidas de 20/08 a 25/08
+notas com data de agenda entre 1 de janeiro e 31 de janeiro de 2025
+
+
+# ====================================================================================
+# Suíte 4: Testes de Ambiguidade e Variações de Linguagem
+# ------------------------------------------------------------------------------------
+# Objetivo: Testar a robustez do modelo contra diferentes formas de perguntar a
+# mesma coisa, garantindo que a intenção principal (filtros) seja capturada.
+# ====================================================================================
+# Variações para "entregue" (TipoData: "2")
+as notas que já chegaram
+quais entregas foram concluídas hoje?
+o que foi finalizado ontem?
+
+# Variações para "baixada" (TipoData: "6")
+notas que tiveram baixa
+o que foi dado baixa no sistema na semana passada?
+status de baixa
+
+# Variações para "agenda" (TipoData: "1")
+o que está agendado para amanhã? (Deve extrair a data correta '2025-10-10')
+tem algo na agenda para 15/10/2025?
+
+# Perguntas complexas onde a IA deve ignorar o que não consegue filtrar
+quais notas do cliente ACME foram entregues ontem? (Deve extrair apenas "entregues" e "ontem")
+mostre as notas da transportadora RápidoLog emitidas na semana passada (Deve extrair apenas "emitidas" e "semana passada")
+nf 54321 do cliente XYZ (Deve extrair apenas "nf 54321")
+
+
+# ====================================================================================
+# Suíte 5: Testes de Consultas Vagas ou Fora de Escopo
+# ------------------------------------------------------------------------------------
+# Objetivo: Verificar o comportamento da IA quando o usuário não fornece nenhum
+# dos filtros esperados (`NF`, datas) ou solicita informações que o sistema não 
+# pode filtrar (como `cliente`). O resultado ideal é um JSON com todos os campos nulos.
+# ====================================================================================
+qual o status da entrega?
+me mostre as notas
+quais são os clientes?
+liste as transportadoras
+notas fiscais
