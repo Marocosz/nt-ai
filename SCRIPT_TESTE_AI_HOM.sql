@@ -23,7 +23,6 @@ EXEC [dbo].[SP_TK_NOTAS_AI_HOM]
     @CNPJRaizTransp = NULL,
     @SortColumn = NULL,
     @SortDirection = 'DESC';
-GO
 
 
 -- =====================================================================================
@@ -47,7 +46,6 @@ EXEC [dbo].[SP_TK_NOTAS_AI_HOM]
     @CNPJRaizTransp = NULL,
     @SortColumn = NULL,
     @SortDirection = 'ASC';
-GO
 
 
 -- =====================================================================================
@@ -71,7 +69,6 @@ EXEC [dbo].[SP_TK_NOTAS_AI_HOM]
     @CNPJRaizTransp = NULL,
     @SortColumn = 'valor_nf', -- Ordena pelo valor da nota fiscal
     @SortDirection = 'DESC'; -- Do maior para o menor
-GO
 
 
 -- =====================================================================================
@@ -95,4 +92,3 @@ EXEC [dbo].[SP_TK_NOTAS_AI_HOM]
     @CNPJRaizTransp = NULL,
     @SortColumn = NULL, 
     @SortDirection = 'ASC';
-GO

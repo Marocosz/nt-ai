@@ -24,8 +24,7 @@ SET
 
 -- Ajusta a data final para incluir todas as horas do dia.
 IF @ATE IS NOT NULL
-SET
-    @ATE = DATEADD(SECOND, -1, DATEADD(DAY, 1, CAST(@ATE AS DATE)));
+    SET @ATE = DATEADD(SECOND, -1, CAST(DATEADD(DAY, 1, CAST(@ATE AS DATE)) AS DATETIME));
 
 -- 1. PRÉ-FILTRAGEM (Otimização Principal)
 -- Insere em uma tabela temporária apenas os dados que correspondem aos filtros primários.
@@ -436,4 +435,3 @@ SET
     NOCOUNT OFF;
 
 END
-GO
