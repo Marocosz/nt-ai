@@ -1,5 +1,5 @@
 CREATE
-OR ALTER PROC [dbo].[SP_TK_NOTAS_AI] (
+OR ALTER PROC [dbo].[SP_TK_NOTAS_AI_HOM] (
     -- Parâmetros Originais
     @IdUsuario INT,
     @NF INT = NULL,
