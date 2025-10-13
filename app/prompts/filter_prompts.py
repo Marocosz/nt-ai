@@ -1,18 +1,50 @@
 from langchain_core.prompts import PromptTemplate
 
-# Template como uma string de texto normal (sem o 'f' na frente).
-# As datas estão fixas por enquanto para garantir que o problema de formatação seja resolvido.
-# TODAS as chaves que NÃO são variáveis para o LangChain estão duplicadas: {{ }}
-template = """
-Você é um assistente especialista que analisa texto e o converte para um objeto JSON de filtros para um sistema de logística. Sua resposta deve ser APENAS o objeto JSON, sem nenhum texto adicional.
+# --- 1. O Otimizador de Query (Versão 2.0) ---
+# Atualizado com exemplos mais complexos para lidar com as novas capacidades de filtro e ordenação.
+enhancer_template = """
+Sua tarefa é reescrever a pergunta do usuário para ser mais clara, completa e explícita, corrigindo erros de digitação e expandindo abreviações. Responda APENAS com a frase reescrita.
 
-A data de referência para cálculos é 2025-10-09.
+Exemplos:
+---
+Pergunta Original: "nf entregues ontem sp"
+Pergunta Reescrita: "Me mostre as notas fiscais que foram entregues ontem para o estado de São Paulo"
+---
+Pergunta Original: "o q foi emitido na sem passada"
+Pergunta Reescrita: "O que foi emitido na semana passada"
+---
+Pergunta Original: "notas do cliente acme transp veloz ordene por valor"
+Pergunta Reescrita: "Me mostre as notas do cliente ACME da transportadora Veloz, ordenado pelo maior valor da nota fiscal"
+---
+
+Pergunta Original: {query}
+Pergunta Reescrita:
+"""
+QUERY_ENHANCER_PROMPT = PromptTemplate.from_template(enhancer_template)
+
+
+# --- 2. O Parser de JSON (Versão 2.0 - Robusta) ---
+# Responsável por traduzir a pergunta JÁ OTIMIZADA em um JSON de filtros completo.
+parser_template = """
+Você é um assistente especialista que analisa um texto claro e o converte para um objeto JSON de filtros. Sua resposta deve ser APENAS o objeto JSON, sem nenhum texto adicional.
+
+A data de referência para cálculos é {today}.
 
 Analise o texto do usuário e extraia as seguintes entidades:
-- "NF": O número da nota fiscal, como um número inteiro.
+- "NF": O número da nota fiscal (inteiro).
 - "DE": A data de início do período no formato AAAA-MM-DD.
 - "ATE": A data de fim do período no formato AAAA-MM-DD.
-- "TipoData": O código numérico correspondente ao tipo de data, baseado no mapeamento abaixo.
+- "TipoData": O código numérico correspondente ao tipo de data.
+- "Cliente": O nome do cliente/tomador.
+- "Transportadora": O nome da transportadora/parceiro.
+- "UFDestino": A sigla do estado de destino (ex: "SP", "RJ").
+- "CidadeDestino": O nome da cidade de destino.
+- "Operacao": O tipo de operação (ex: "VENDA").
+- "SituacaoNF": O status da nota (ex: "EM TRÂNSITO").
+- "StatusAnaliseData": O status da análise de performance (ex: "ATRASADO").
+- "CNPJRaizTransp": A raiz de 8 dígitos do CNPJ da transportadora.
+- "SortColumn": A coluna pela qual ordenar o resultado.
+- "SortDirection": A direção da ordenação ("ASC" para crescente, "DESC" para decrescente).
 
 Mapeamento para "TipoData":
 {{
@@ -24,28 +56,31 @@ Mapeamento para "TipoData":
     "baixada": "6"
 }}
 
+Mapeamento para Ordenação ("SortColumn"):
+- Se o usuário pedir para ordenar por valor da nota, use "valor_nf".
+- Se pedir por data de entrega, use "data_entrega".
+- Se pedir por data de emissão, use "data_emissao".
+
 Regras:
 - Se uma entidade não for encontrada, seu valor no JSON deve ser null.
-- Datas relativas: 'ontem' é 2025-10-08, 'hoje' é 2025-10-09, 'semana passada' ou 'últimos 7 dias' é o período de 2025-10-02 a 2025-10-09.
-- Se a busca for por um número de NF, os outros campos devem ser null.
+- Datas relativas: 'ontem' é {yesterday}, 'hoje' é {today}, 'semana passada' é o período de {last_week_start} a {today}.
+- Para ordenação, se o usuário pedir "maior valor" ou "mais recente", use "DESC". Se pedir "menor valor" ou "mais antigo", use "ASC". Se não especificar, o padrão é "ASC".
+- Se a busca for por um número de NF, todos os outros campos devem ser null.
 
 Exemplos:
 ---
-Texto: "qual a nf 54321"
-JSON: {{"NF": 54321, "DE": null, "ATE": null, "TipoData": null}}
+Texto: "Me mostre as notas fiscais que foram entregues ontem para o estado de São Paulo"
+JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "2", "Cliente": null, "Transportadora": null, "UFDestino": "SP", "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": "ASC"}}
 ---
-Texto: "me mostre as notas com data de agenda de ontem"
-JSON: {{"NF": null, "DE": "2025-10-08", "ATE": "2025-10-08", "TipoData": "1"}}
+Texto: "qual a nf 12345"
+JSON: {{"NF": 12345, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": "ASC"}}
 ---
-Texto: "notas entregues na semana passada"
-JSON: {{"NF": null, "DE": "2025-10-02", "ATE": "2025-10-09", "TipoData": "2"}}
+Texto: "Mostre as notas com status de análise 'ATRASADO' da transportadora 'Veloz' para o cliente 'ACME', ordenado pelo maior valor da nota fiscal"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": "ACME", "Transportadora": "Veloz", "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "ATRASADO", "CNPJRaizTransp": null, "SortColumn": "valor_nf", "SortDirection": "DESC"}}
 ---
 
 Agora, analise o seguinte texto:
-Texto: {query}
+Texto: {enhanced_query}
 JSON:
 """
-
-# Cria o objeto de prompt do LangChain. 
-# Agora ele está recebendo um template limpo onde a única variável real é {query}.
-PARSER_PROMPT = PromptTemplate.from_template(template)
+JSON_PARSER_PROMPT = PromptTemplate.from_template(parser_template)

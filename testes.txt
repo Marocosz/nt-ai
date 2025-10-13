@@ -1,27 +1,25 @@
 # ====================================================================================
 # ====================================================================================
 #
-#                     ROTEIRO DE TESTES - New Tracking AI
+#                    ROTEIRO DE TESTES - New Tracking AI v2.0
 #
 # Propósito do Arquivo:
 #
 # Este arquivo contém um conjunto de prompts para validar a capacidade do microsserviço
 # de IA de interpretar corretamente a intenção de busca do usuário e traduzi-la 
-# para um objeto JSON estruturado com os filtros (`NF`, `DE`, `ATE`, `TipoData`) 
-# que a API principal do New Tracking espera.
-#
-# Os testes focam na extração de entidades, tratamento de datas (absolutas e 
-# relativas) e na robustez do sistema a variações de linguagem.
+# para um objeto JSON estruturado com filtros avançados (`Cliente`, `Transportadora`, 
+# `UFDestino`, `Operacao`, etc.) e parâmetros de ordenação (`SortColumn`, 
+# `SortDirection`), conforme esperado pela procedure `SP_TK_NOTAS_AI`.
 #
 # ====================================================================================
 # ====================================================================================
 
 
 # ====================================================================================
-# Suíte 1: Testes de Busca por Nota Fiscal Específica
+# Suíte 1: Testes de Busca por Nota Fiscal Específica (Função Básica)
 # ------------------------------------------------------------------------------------
-# Objetivo: Validar se a IA consegue isolar um número de Nota Fiscal e retornar
-# um JSON onde apenas o campo `NF` está preenchido, com os demais nulos.
+# Objetivo: Validar se a IA continua isolando corretamente o número de uma Nota Fiscal,
+# retornando um JSON onde apenas o campo `NF` está preenchido.
 # ====================================================================================
 qual a nf 12345
 nf 98765
@@ -29,74 +27,83 @@ me mostre a nota fiscal 55432
 
 
 # ====================================================================================
-# Suíte 2: Testes de Filtro por Datas Relativas
+# Suíte 2: Testes de Filtro por Datas (Relativas e Absolutas)
 # ------------------------------------------------------------------------------------
-# Objetivo: Verificar a capacidade da IA de entender termos relativos como "hoje",
-# "ontem" e "semana passada", e traduzi-los para o par `DE`/`ATE` correto, além
-# de identificar o `TipoData` solicitado.
+# Objetivo: Verificar a capacidade da IA de traduzir termos de data para o par 
+# `DE`/`ATE` correto, além de identificar o `TipoData` solicitado.
 # ====================================================================================
-# Data de referência para os testes: 09 de Outubro de 2025
+# Data de referência para os testes: 13 de Outubro de 2025
 
-# Testes com "hoje" (DE e ATE devem ser '2025-10-09')
+# Testes com "hoje" (DE/ATE: '2025-10-13') e "ontem" (DE/ATE: '2025-10-12')
 quais notas foram entregues hoje?
-mostre o que foi emitido hoje
-notas baixadas hoje
+mostre o que foi emitido ontem
+notas com data de agenda para amanhã? (DE/ATE: '2025-10-14')
 
-# Testes com "ontem" (DE e ATE devem ser '2025-10-08')
-o que tem com data de agenda para ontem?
-notas previstas para ontem
-me dê as notas entregues ontem
-
-# Testes com "semana passada" (DE='2025-10-02', ATE='2025-10-09')
+# Testes com "semana passada" (DE: '2025-10-06', ATE: '2025-10-13')
 o que foi baixado na última semana?
 notas emitidas nos últimos 7 dias
-mostre as notas com previsão real para a semana passada
 
-
-# ====================================================================================
-# Suíte 3: Testes de Filtro por Datas Absolutas (Intervalos)
-# ------------------------------------------------------------------------------------
-# Objetivo: Garantir que a IA consegue extrair corretamente um intervalo de datas
-# explícito, preenchendo `DE` e `ATE`, e identificar o `TipoData` associado.
-# ====================================================================================
+# Testes com datas absolutas
 notas previstas entre 1 e 15 de setembro de 2025
 o que foi entregue de 01/09/2025 até 10/09/2025
-mostre as notas emitidas de 20/08 a 25/08
-notas com data de agenda entre 1 de janeiro e 31 de janeiro de 2025
 
 
 # ====================================================================================
-# Suíte 4: Testes de Ambiguidade e Variações de Linguagem
+# Suíte 3: Testes de Filtros de Entidade (Cliente, Transp, Local, etc.)
 # ------------------------------------------------------------------------------------
-# Objetivo: Testar a robustez do modelo contra diferentes formas de perguntar a
-# mesma coisa, garantindo que a intenção principal (filtros) seja capturada.
+# Objetivo: Garantir que a IA consegue extrair corretamente as novas entidades de texto
+# e mapeá-las para os parâmetros correspondentes (@Cliente, @UFDestino, etc.).
 # ====================================================================================
-# Variações para "entregue" (TipoData: "2")
-as notas que já chegaram
-quais entregas foram concluídas hoje?
-o que foi finalizado ontem?
+# Teste de filtro único
+notas do cliente ACME
+notas da transportadora Veloz
+notas para o estado de São Paulo
+notas para a cidade de Uberlândia
+notas com operação de VENDA
+notas que estão EM TRÂNSITO
+notas com status de análise ATRASADO
 
-# Variações para "baixada" (TipoData: "6")
-notas que tiveram baixa
-o que foi dado baixa no sistema na semana passada?
-status de baixa
-
-# Variações para "agenda" (TipoData: "1")
-o que está agendado para amanhã? (Deve extrair a data correta '2025-10-10')
-tem algo na agenda para 15/10/2025?
-
-# Perguntas complexas onde a IA deve ignorar o que não consegue filtrar
-quais notas do cliente ACME foram entregues ontem? (Deve extrair apenas "entregues" e "ontem")
-mostre as notas da transportadora RápidoLog emitidas na semana passada (Deve extrair apenas "emitidas" e "semana passada")
-nf 54321 do cliente XYZ (Deve extrair apenas "nf 54321")
+# Teste de combinação de duas entidades
+notas do cliente BEXX para o Rio de Janeiro
+notas emitidas hoje da transportadora RápidoLog
 
 
 # ====================================================================================
-# Suíte 5: Testes de Consultas Vagas ou Fora de Escopo
+# Suíte 4: Testes de Ordenação Dinâmica
+# ------------------------------------------------------------------------------------
+# Objetivo: Validar se a IA consegue interpretar a intenção de ordenação do usuário,
+# preenchendo corretamente os campos `SortColumn` e `SortDirection`.
+# ====================================================================================
+# Ordenação Descendente (maior/mais recente)
+mostre as notas emitidas hoje ordenadas pelo maior valor
+notas da semana passada ordenadas pela data de entrega mais recente
+
+# Ordenação Ascendente (menor/mais antigo)
+liste as notas do cliente XYZ ordenadas pelo menor valor da nota fiscal
+notas entregues em setembro, ordenadas da mais antiga para a mais nova
+
+
+# ====================================================================================
+# Suíte 5: Testes de Combinação Complexa (Filtros Múltiplos + Ordenação)
+# ------------------------------------------------------------------------------------
+# Objetivo: "Estressar" a IA com prompts que combinam múltiplas entidades de 
+# filtro e uma instrução de ordenação, simulando uma busca de usuário avançada.
+# ====================================================================================
+notas de VENDA para o cliente BEXX no estado do Rio de Janeiro, ordenadas pela data de entrega mais recente
+(Resultado esperado: Operacao="VENDA", Cliente="BEXX", UFDestino="RJ", SortColumn="data_entrega", SortDirection="DESC")
+
+quais notas da transportadora RápidoLog para Manaus foram entregues ontem e estão com análise ATRASADO?
+(Resultado esperado: Transportadora="RápidoLog", CidadeDestino="Manaus", DE/ATE="2025-10-12", TipoData="2", StatusAnaliseData="ATRASADO")
+
+liste as notas emitidas na semana passada para SP, ordenadas pelo maior valor
+(Resultado esperado: DE/ATE da semana passada, TipoData="3", UFDestino="SP", SortColumn="valor_nf", SortDirection="DESC")
+
+
+# ====================================================================================
+# Suíte 6: Testes de Consultas Vagas ou Fora de Escopo
 # ------------------------------------------------------------------------------------
 # Objetivo: Verificar o comportamento da IA quando o usuário não fornece nenhum
-# dos filtros esperados (`NF`, datas) ou solicita informações que o sistema não 
-# pode filtrar (como `cliente`). O resultado ideal é um JSON com todos os campos nulos.
+# filtro válido. O resultado ideal é um JSON com todos os campos nulos.
 # ====================================================================================
 qual o status da entrega?
 me mostre as notas

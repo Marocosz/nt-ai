@@ -8,43 +8,44 @@ st.set_page_config(
     page_icon="🤖"
 )
 
-st.title("Interface Teste")
+st.title("🤖 Interface de Teste - New Tracking AI")
+st.header("Análise de Intenção de Busca")
+st.caption("Esta UI usa o endpoint de debug para mostrar os passos da IA.")
 
-# URL do seu microsserviço rodando localmente
-MICROSERVICE_URL = "http://127.0.0.1:5001/parse-query"
+# --- MUDANÇA AQUI: Apontar para o novo endpoint de debug ---
+MICROSERVICE_URL = "http://127.0.0.1:5001/debug-query"
 
 # --- Interface do Usuário ---
 
-# Cria a caixa de texto para o usuário digitar a pergunta
 query = st.text_input(
     "Digite sua consulta em linguagem natural:", 
-    placeholder="Ex: notas entregues na semana passada para o cliente ACME"
+    placeholder="Ex: notas do cliente acme transp veloz ordene por valor"
 )
 
-# Cria o botão para enviar a consulta
 if st.button("Analisar com IA"):
     if not query:
         st.warning("Por favor, digite uma consulta antes de analisar.")
     else:
-        # Mostra um "spinner" de carregamento enquanto a requisição está em andamento
         with st.spinner('Analisando sua pergunta com a IA...'):
             try:
-                # Monta o corpo da requisição JSON
                 payload = {"query": query}
-                
-                # Faz a chamada POST para o microsserviço
                 response = requests.post(MICROSERVICE_URL, json=payload)
                 
-                # Verifica se a chamada foi bem-sucedida
                 if response.status_code == 200:
                     st.success("Análise concluída com sucesso!")
                     
-                    # Pega o resultado JSON e exibe de forma formatada
-                    result_json = response.json()
-                    st.subheader("Filtros JSON Extraídos:")
-                    st.json(result_json)
+                    # --- MUDANÇA AQUI: Extrair e exibir os dois resultados ---
+                    result_data = response.json()
+                    
+                    enhanced_query = result_data.get("enhanced_query", "Não foi possível gerar a query otimizada.")
+                    parsed_json = result_data.get("parsed_json", {})
+
+                    st.subheader("1. Query Otimizada (Enhanced Query):")
+                    st.info(enhanced_query)
+                    
+                    st.subheader("2. Filtros JSON Extraídos:")
+                    st.json(parsed_json)
                 else:
-                    # Mostra uma mensagem de erro se a API falhar
                     error_details = response.json().get('detail', 'Erro desconhecido.')
                     st.error(f"Erro ao chamar o microsserviço (Status {response.status_code}): {error_details}")
 
