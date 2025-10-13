@@ -1,15 +1,15 @@
 # ====================================================================================
 # ====================================================================================
 #
-#                    ROTEIRO DE TESTES - New Tracking AI v2.0
+#                    ROTEIRO DE TESTES - New Tracking AI v3.0
 #
 # Propósito do Arquivo:
 #
 # Este arquivo contém um conjunto de prompts para validar a capacidade do microsserviço
 # de IA de interpretar corretamente a intenção de busca do usuário e traduzi-la 
 # para um objeto JSON estruturado com filtros avançados (`Cliente`, `Transportadora`, 
-# `UFDestino`, `Operacao`, etc.) e parâmetros de ordenação (`SortColumn`, 
-# `SortDirection`), conforme esperado pela procedure `SP_TK_NOTAS_AI`.
+# `UFDestino`, `Operacao`, `SituacaoNF`, `StatusAnaliseData`) e parâmetros de ordenação,
+# conforme esperado pela procedure `SP_TK_NOTAS_AI`.
 #
 # ====================================================================================
 # ====================================================================================
@@ -18,8 +18,8 @@
 # ====================================================================================
 # Suíte 1: Testes de Busca por Nota Fiscal Específica (Função Básica)
 # ------------------------------------------------------------------------------------
-# Objetivo: Validar se a IA continua isolando corretamente o número de uma Nota Fiscal,
-# retornando um JSON onde apenas o campo `NF` está preenchido.
+# Objetivo: Validar se a IA isola corretamente o número de uma Nota Fiscal.
+# Resultado Esperado: JSON com o campo `NF` preenchido e os demais nulos.
 # ====================================================================================
 qual a nf 12345
 nf 98765
@@ -29,11 +29,9 @@ me mostre a nota fiscal 55432
 # ====================================================================================
 # Suíte 2: Testes de Filtro por Datas (Relativas e Absolutas)
 # ------------------------------------------------------------------------------------
-# Objetivo: Verificar a capacidade da IA de traduzir termos de data para o par 
-# `DE`/`ATE` correto, além de identificar o `TipoData` solicitado.
-# ====================================================================================
+# Objetivo: Verificar a tradução de termos de data para `DE`/`ATE` e `TipoData`.
 # Data de referência para os testes: 13 de Outubro de 2025
-
+# ====================================================================================
 # Testes com "hoje" (DE/ATE: '2025-10-13') e "ontem" (DE/ATE: '2025-10-12')
 quais notas foram entregues hoje?
 mostre o que foi emitido ontem
@@ -49,54 +47,62 @@ o que foi entregue de 01/09/2025 até 10/09/2025
 
 
 # ====================================================================================
-# Suíte 3: Testes de Filtros de Entidade (Cliente, Transp, Local, etc.)
+# Suíte 3: Testes de Filtros de Entidade (Valores Exatos do BD)
 # ------------------------------------------------------------------------------------
-# Objetivo: Garantir que a IA consegue extrair corretamente as novas entidades de texto
-# e mapeá-las para os parâmetros correspondentes (@Cliente, @UFDestino, etc.).
+# Objetivo: Garantir que a IA extrai e mapeia corretamente os novos filtros de
+# estado e categoria para os parâmetros correspondentes.
 # ====================================================================================
-# Teste de filtro único
-notas do cliente ACME
-notas da transportadora Veloz
-notas para o estado de São Paulo
-notas para a cidade de Uberlândia
-notas com operação de VENDA
+# Testes para @Operacao
+notas com operação InBound-IPO
+me mostre as operações OutBound-SPO
+
+# Testes para @SituacaoNF
 notas que estão EM TRÂNSITO
-notas com status de análise ATRASADO
+quais notas foram retidas?
+liste as notas com status ENTREGUE
 
-# Teste de combinação de duas entidades
-notas do cliente BEXX para o Rio de Janeiro
-notas emitidas hoje da transportadora RápidoLog
+# Testes para @StatusAnaliseData
+notas com análise de performance ATRASO
+me mostre as notas com status DO DIA
+quais entregas estão com análise FUTURO?
 
 
 # ====================================================================================
-# Suíte 4: Testes de Ordenação Dinâmica
+# Suíte 4: Testes de Ambiguidade, Sinônimos e Hierarquia Geográfica
 # ------------------------------------------------------------------------------------
-# Objetivo: Validar se a IA consegue interpretar a intenção de ordenação do usuário,
-# preenchendo corretamente os campos `SortColumn` e `SortDirection`.
+# Objetivo: Validar as regras de desambiguação e a capacidade da IA de entender
+# o vocabulário do dia a dia e a lógica geográfica.
 # ====================================================================================
-# Ordenação Descendente (maior/mais recente)
-mostre as notas emitidas hoje ordenadas pelo maior valor
-notas da semana passada ordenadas pela data de entrega mais recente
+# Ambiguidade: TipoData (evento) vs. SituacaoNF (estado)
+notas entregues ontem (Deve usar TipoData = '2' e o intervalo de data de ontem)
+notas com status entregue (Deve usar SituacaoNF = 'ENTREGUE' e datas nulas)
 
-# Ordenação Ascendente (menor/mais antigo)
-liste as notas do cliente XYZ ordenadas pelo menor valor da nota fiscal
-notas entregues em setembro, ordenadas da mais antiga para a mais nova
+# Sinônimos
+notas rodando (Deve mapear para SituacaoNF = 'TRÂNSITO')
+entregas com atraso (Deve mapear para StatusAnaliseData = 'ATRASO')
+notas previstas para amanhã (Deve mapear para StatusAnaliseData = 'DIA SEGUINTE')
+ordenar pelo mais caro (Deve mapear para SortColumn = 'valor_nf' e SortDirection = 'DESC')
+
+# Hierarquia Geográfica
+notas para São Paulo (Deve priorizar e retornar UFDestino = 'SP')
+notas para a cidade de São Paulo (Deve retornar CidadeDestino = 'São Paulo' e UFDestino = 'SP')
+mostre as notas para Uberlândia em Minas Gerais (Deve retornar CidadeDestino = 'Uberlândia' e UFDestino = 'MG')
 
 
 # ====================================================================================
 # Suíte 5: Testes de Combinação Complexa (Filtros Múltiplos + Ordenação)
 # ------------------------------------------------------------------------------------
-# Objetivo: "Estressar" a IA com prompts que combinam múltiplas entidades de 
-# filtro e uma instrução de ordenação, simulando uma busca de usuário avançada.
+# Objetivo: "Estressar" a IA com prompts que simulam uma busca de usuário avançada,
+# combinando múltiplos filtros e uma instrução de ordenação.
 # ====================================================================================
-notas de VENDA para o cliente BEXX no estado do Rio de Janeiro, ordenadas pela data de entrega mais recente
-(Resultado esperado: Operacao="VENDA", Cliente="BEXX", UFDestino="RJ", SortColumn="data_entrega", SortDirection="DESC")
+notas de operação OutBound-RIO para o cliente BEXX no estado do Rio de Janeiro, ordenadas pela data de entrega mais recente
+(Resultado esperado: Operacao="OutBound-RIO", Cliente="BEXX", UFDestino="RJ", SortColumn="data_entrega", SortDirection="DESC")
 
-quais notas da transportadora RápidoLog para Manaus foram entregues ontem e estão com análise ATRASADO?
-(Resultado esperado: Transportadora="RápidoLog", CidadeDestino="Manaus", DE/ATE="2025-10-12", TipoData="2", StatusAnaliseData="ATRASADO")
+quais notas da transportadora RápidoLog para Manaus foram baixadas na semana passada e estão com análise ATRASO?
+(Resultado esperado: Transportadora="RápidoLog", CidadeDestino="Manaus", DE/ATE da semana passada, TipoData="6", StatusAnaliseData="ATRASO")
 
-liste as notas emitidas na semana passada para SP, ordenadas pelo maior valor
-(Resultado esperado: DE/ATE da semana passada, TipoData="3", UFDestino="SP", SortColumn="valor_nf", SortDirection="DESC")
+liste as notas emitidas hoje para SP que estão em trânsito, ordenadas pelo menor valor
+(Resultado esperado: DE/ATE de hoje, TipoData="3", UFDestino="SP", SituacaoNF="TRÂNSITO", SortColumn="valor_nf", SortDirection="ASC")
 
 
 # ====================================================================================
