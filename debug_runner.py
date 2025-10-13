@@ -28,7 +28,7 @@ def run_tests(queries):
 
         try:
             # Faz a chamada POST para o endpoint de debug
-            response = requests.post(MICROSERVICE_URL, json=payload, timeout=30)
+            response = requests.post(MICROSERVICE_URL, json=payload, timeout=60)
 
             # Verifica se a chamada foi bem-sucedida
             if response.status_code == 200:
