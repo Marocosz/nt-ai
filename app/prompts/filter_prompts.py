@@ -1,7 +1,7 @@
 from langchain_core.prompts import PromptTemplate
 from datetime import datetime, timedelta
 
-# --- 1. O Otimizador de Query (inalterado, mas essencial para a etapa seguinte) ---
+# --- 1. O Otimizador de Query (inalterado) ---
 enhancer_template = """
 Sua tarefa é reescrever a pergunta do usuário para ser mais clara, completa e explícita, corrigindo erros de digitação e expandindo abreviações. Responda APENAS com a frase reescrita.
 
@@ -23,9 +23,9 @@ Pergunta Reescrita:
 QUERY_ENHANCER_PROMPT = PromptTemplate.from_template(enhancer_template)
 
 
-# --- 2. O Parser de JSON (Versão 4.2 - com Lógica de Ambiguidade e Hierarquia) ---
+# --- 2. O Parser de JSON (Versão 4.4 - FINALMENTE CORRIGIDA) ---
 parser_template = """
-Você é um assistente especialista que analisa um texto claro e o converte para um objeto JSON de filtros. Sua resposta deve ser APENAS o objeto JSON.
+Você é um assistente especialista que analisa um texto claro e o converte para um objeto JSON de filtros. Sua resposta deve ser APENAS o objeto JSON, sem nenhum texto adicional.
 
 A data de referência para cálculos é {today}.
 
@@ -52,7 +52,7 @@ Valores possíveis: "ATRASO", "DIA SEGUINTE", "DO DIA", "ENTREGUE", "FUTURO", "P
 Mapeamento para "UFDestino" (estado):
 Valores possíveis: "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO".
 
---- NOVAS REGRAS DE INTELIGÊNCIA ---
+--- REGRAS DE INTELIGÊNCIA ---
 Regras de Ambiguidade (TipoData vs. SituacaoNF):
 - Se uma palavra como "entregue", "emitido" ou "baixada" for usada JUNTO com um período de tempo (ex: "ontem", "hoje", "na semana passada", "em setembro"), priorize o preenchimento de "TipoData".
 - Se uma palavra que descreve um estado (ex: "em trânsito", "retida") for usada sem um período de tempo claro, priorize o preenchimento de "SituacaoNF".
@@ -62,6 +62,12 @@ Regras de Localização:
 - Se o usuário mencionar uma sigla de 2 letras da lista de "UFDestino", preencha o campo "UFDestino".
 - Se um nome pode ser tanto cidade quanto estado (ex: "São Paulo"), priorize o preenchimento de "UFDestino" com a sigla correspondente (ex: "SP"), a menos que o usuário especifique "cidade de".
 - Extraia o nome da cidade para "CidadeDestino" sempre que possível.
+
+--- REGRAS DE PRECISÃO (Adicionadas para corrigir os testes) ---
+1. Extração Completa de Datas: Se você identificar um período de tempo (ex: "ontem", "hoje"), você DEVE preencher os campos "DE" e "ATE" com as datas correspondentes, além do "TipoData".
+2. Prioridade de Filtro: Se um `StatusAnaliseData` como 'DO DIA' ou 'DIA SEGUINTE' for identificado, priorize este filtro e NÃO extraia um `TipoData` ao mesmo tempo, a menos que o usuário combine os dois termos (ex: 'notas emitidas com status do dia').
+3. Restrição de Inferência: NÃO infira filtros que não foram explicitamente mencionados. Se o usuário pedir para ordenar por 'data de entrega', não assuma que a `SituacaoNF` deve ser 'ENTREGUE'. Se a pergunta for vaga (ex: "quais são as notas?"), todos os filtros devem ser null.
+4. # <<< NOVA REGRA 1 >>> Regra para Códigos: Valores para "Operacao" (como "OutBound-SPO") são códigos únicos e NÃO DEVEM ser divididos ou interpretados. Extraia o valor exato.
 ---
 
 Regras de Ordenação ("SortColumn"):
@@ -73,6 +79,7 @@ Regras de Ordenação ("SortColumn"):
 - Mapeie frases para "SortDirection":
     - "mais recente", "maior", "mais caro", "decrescente" -> "DESC"
     - "mais antigo", "menor", "mais barato", "crescente" -> "ASC"
+- # <<< NOVA REGRA 2 >>> Se "SortColumn" for null, "SortDirection" também DEVE ser null. O padrão "ASC" só se aplica se uma coluna for especificada sem uma direção.
 - Se o usuário pedir uma ordenação que não corresponde às opções acima, "SortColumn" deve ser null.
 
 Regras Gerais:
@@ -83,16 +90,27 @@ Regras Gerais:
 Exemplos:
 ---
 Texto: "Mostre todas as notas com situação 'RETIDA' para o cliente BEXX"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": "BEXX", "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "RETIDA", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": "ASC"}}
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": "BEXX", "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "RETIDA", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 Texto: "Quais notas de operação OutBound-SPO estão com análise de performance 'ATRASO'?"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": "OutBound-SPO", "SituacaoNF": null, "StatusAnaliseData": "ATRASO", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": "ASC"}}
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": "OutBound-SPO", "SituacaoNF": null, "StatusAnaliseData": "ATRASO", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "notas entregues ontem ordenadas pelo maior valor"
-JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "2", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": "valor_nf", "SortDirection": "DESC"}}
+# <<< NOVO EXEMPLO 1 (CORREÇÃO) >>>
+Texto: "notas previstas entre 1 e 15 de setembro de 2025"
+JSON: {{"NF": null, "DE": "2025-09-01", "ATE": "2025-09-15", "TipoData": "4", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Texto: "notas entregues ontem ordenadas pela data de entrega mais recente"
+JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "2", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": "data_entrega", "SortDirection": "DESC"}}
 ---
 Texto: "quais notas foram para a cidade de Uberlândia em Minas Gerais?"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": "MG", "CidadeDestino": "Uberlândia", "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": "ASC"}}
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": "MG", "CidadeDestino": "Uberlândia", "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+# <<< NOVO EXEMPLO 2 (CORREÇÃO) >>>
+Texto: "me mostre as notas com status DO DIA"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DO DIA", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Texto: "qual o status da entrega?"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 
 Agora, analise o seguinte texto:

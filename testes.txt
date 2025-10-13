@@ -35,7 +35,8 @@ me mostre a nota fiscal 55432
 # Testes com "hoje" (DE/ATE: '2025-10-13') e "ontem" (DE/ATE: '2025-10-12')
 quais notas foram entregues hoje?
 mostre o que foi emitido ontem
-notas com data de agenda para amanhã? (DE/ATE: '2025-10-14')
+notas com data de agenda para amanhã?
+# (Resultado esperado: DE/ATE = '2025-10-14')
 
 # Testes com "semana passada" (DE: '2025-10-06', ATE: '2025-10-13')
 o que foi baixado na última semana?
@@ -74,19 +75,28 @@ quais entregas estão com análise FUTURO?
 # o vocabulário do dia a dia e a lógica geográfica.
 # ====================================================================================
 # Ambiguidade: TipoData (evento) vs. SituacaoNF (estado)
-notas entregues ontem (Deve usar TipoData = '2' e o intervalo de data de ontem)
-notas com status entregue (Deve usar SituacaoNF = 'ENTREGUE' e datas nulas)
+notas entregues ontem
+# (Resultado esperado: Deve usar TipoData = '2' e o intervalo de data de ontem)
+notas com status entregue
+# (Resultado esperado: Deve usar SituacaoNF = 'ENTREGUE' e datas nulas)
 
 # Sinônimos
-notas rodando (Deve mapear para SituacaoNF = 'TRÂNSITO')
-entregas com atraso (Deve mapear para StatusAnaliseData = 'ATRASO')
-notas previstas para amanhã (Deve mapear para StatusAnaliseData = 'DIA SEGUINTE')
-ordenar pelo mais caro (Deve mapear para SortColumn = 'valor_nf' e SortDirection = 'DESC')
+notas rodando
+# (Resultado esperado: Deve mapear para SituacaoNF = 'TRÂNSITO')
+entregas com atraso
+# (Resultado esperado: Deve mapear para StatusAnaliseData = 'ATRASO')
+notas previstas para amanhã
+# (Resultado esperado: Deve mapear para StatusAnaliseData = 'DIA SEGUINTE')
+ordenar pelo mais caro
+# (Resultado esperado: Deve mapear para SortColumn = 'valor_nf' e SortDirection = 'DESC')
 
 # Hierarquia Geográfica
-notas para São Paulo (Deve priorizar e retornar UFDestino = 'SP')
-notas para a cidade de São Paulo (Deve retornar CidadeDestino = 'São Paulo' e UFDestino = 'SP')
-mostre as notas para Uberlândia em Minas Gerais (Deve retornar CidadeDestino = 'Uberlândia' e UFDestino = 'MG')
+notas para São Paulo
+# (Resultado esperado: Deve priorizar e retornar UFDestino = 'SP')
+notas para a cidade de São Paulo
+# (Resultado esperado: Deve retornar CidadeDestino = 'São Paulo' e UFDestino = 'SP')
+mostre as notas para Uberlândia em Minas Gerais
+# (Resultado esperado: Deve retornar CidadeDestino = 'Uberlândia' e UFDestino = 'MG')
 
 
 # ====================================================================================
@@ -96,13 +106,13 @@ mostre as notas para Uberlândia em Minas Gerais (Deve retornar CidadeDestino = 
 # combinando múltiplos filtros e uma instrução de ordenação.
 # ====================================================================================
 notas de operação OutBound-RIO para o cliente BEXX no estado do Rio de Janeiro, ordenadas pela data de entrega mais recente
-(Resultado esperado: Operacao="OutBound-RIO", Cliente="BEXX", UFDestino="RJ", SortColumn="data_entrega", SortDirection="DESC")
+# (Resultado esperado: Operacao="OutBound-RIO", Cliente="BEXX", UFDestino="RJ", SortColumn="data_entrega", SortDirection="DESC")
 
 quais notas da transportadora RápidoLog para Manaus foram baixadas na semana passada e estão com análise ATRASO?
-(Resultado esperado: Transportadora="RápidoLog", CidadeDestino="Manaus", DE/ATE da semana passada, TipoData="6", StatusAnaliseData="ATRASO")
+# (Resultado esperado: Transportadora="RápidoLog", CidadeDestino="Manaus", DE/ATE da semana passada, TipoData="6", StatusAnaliseData="ATRASO")
 
 liste as notas emitidas hoje para SP que estão em trânsito, ordenadas pelo menor valor
-(Resultado esperado: DE/ATE de hoje, TipoData="3", UFDestino="SP", SituacaoNF="TRÂNSITO", SortColumn="valor_nf", SortDirection="ASC")
+# (Resultado esperado: DE/ATE de hoje, TipoData="3", UFDestino="SP", SituacaoNF="TRÂNSITO", SortColumn="valor_nf", SortDirection="ASC")
 
 
 # ====================================================================================
