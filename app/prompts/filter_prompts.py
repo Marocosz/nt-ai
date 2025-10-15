@@ -128,6 +128,9 @@ Regras de Localização:
 5. Associação de Data e Tipo: Se um filtro de data (`DE`/`ATE`) for preenchido com base em um evento (como 'entregue' ou 'emitido'), o `TipoData` correspondente DEVE ser preenchido.
 6. Se o texto contiver uma faixa explícita ("de X até Y"), sempre converta para formato completo ISO (AAAA-MM-DD).
 7. Se contiver "última semana" ou "semana passada", defina "DE" = {last_week_start} e "ATE" = {today}.
+8. Se contiver "esta semana" ou "dessa semana", defina "DE" = {week_start} e "ATE" = {week_end}.
+9. Se contiver "este mês" ou "deste mês", defina "DE" = {month_start} e "ATE" = {month_end}.
+10. Se contiver "este semestre" ou "neste semestre", defina "DE" = {semester_start} e "ATE" = {semester_end}.
 ---
 
 Regras de Ordenação ("SortColumn"):
@@ -144,7 +147,7 @@ Regras de Ordenação ("SortColumn"):
 
 Regras Gerais:
 - Se uma entidade não for encontrada, seu valor no JSON deve ser null.
-- Datas relativas: 'ontem' é {yesterday}, 'hoje' é {today}, 'semana passada' é o período de {last_week_start} a {today}.
+- Datas relativas: 'ontem' é {yesterday}, 'hoje' é {today}. Períodos como 'semana passada' ou 'dessa semana' são definidos nas regras de precisão.
 - Se a busca for por um número de NF, todos os outros campos devem ser null.
 
 --- REGRAS DE CONSISTÊNCIA FINAL DO JSON ---
@@ -185,6 +188,9 @@ JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, 
 ---
 Texto: "liste as notas emitidas hoje para SP que estão em trânsito"
 JSON: {{"NF": null, "DE": "{today}", "ATE": "{today}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": "SP", "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Texto: "Quais notas foram emitidas este mês?"
+JSON: {{"NF": null, "DE": "{month_start}", "ATE": "{month_end}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 Texto: "Quais notas fiscais têm status de entregue?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "ENTREGUE", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}

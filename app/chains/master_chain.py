@@ -1,5 +1,4 @@
-# app/chains/master_chain.py
-
+import calendar
 from langchain_core.runnables import Runnable, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain.output_parsers import OutputFixingParser
@@ -10,27 +9,35 @@ from datetime import datetime, timedelta
 def _create_chains():
     """Função auxiliar para não repetir a criação das cadeias."""
     llm = get_llm()
-
-    # --- Cadeia 1: Otimizador de Query (inalterada) ---
     query_enhancer_chain = QUERY_ENHANCER_PROMPT | llm | StrOutputParser()
 
-    # --- Cadeia 2: Parser de JSON (AGORA COM CORREÇÃO AUTOMÁTICA) ---
+    # --- LÓGICA DE CÁLCULO DE DATAS ---
     today = datetime.now()
+    start_of_week = today - timedelta(days=today.weekday())
+    end_of_week = start_of_week + timedelta(days=6)
+    start_of_month = today.replace(day=1)
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    end_of_month = today.replace(day=days_in_month)
+    if today.month <= 6:
+        start_of_semester = today.replace(month=1, day=1)
+        end_of_semester = today.replace(month=6, day=30)
+    else:
+        start_of_semester = today.replace(month=7, day=1)
+        end_of_semester = today.replace(month=12, day=31)
+
     prompt_with_dates = JSON_PARSER_PROMPT.partial(
         today=today.strftime('%Y-%m-%d'),
         yesterday=(today - timedelta(days=1)).strftime('%Y-%m-%d'),
-        last_week_start=(today - timedelta(days=7)).strftime('%Y-%m-%d')
+        last_week_start=(today - timedelta(days=7)).strftime('%Y-%m-%d'),
+        week_start=start_of_week.strftime('%Y-%m-%d'),
+        week_end=end_of_week.strftime('%Y-%m-%d'),
+        month_start=start_of_month.strftime('%Y-%m-%d'),
+        month_end=end_of_month.strftime('%Y-%m-%d'),
+        semester_start=start_of_semester.strftime('%Y-%m-%d'),
+        semester_end=end_of_semester.strftime('%Y-%m-%d')
     )
     
-    # --- 2. Criamos o parser de correção ---
-    # Ele usa o JsonOutputParser como parser base e o próprio llm para fazer as correções
-    output_fixing_parser = OutputFixingParser.from_llm(
-        parser=JsonOutputParser(), 
-        llm=llm
-    )
-
-    # --- 3. A cadeia de parsing agora usa o OutputFixingParser ---
-    # A lógica é a mesma, apenas trocamos o parser final.
+    output_fixing_parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
     json_parser_chain = prompt_with_dates | llm | output_fixing_parser
     
     return query_enhancer_chain, json_parser_chain
