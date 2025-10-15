@@ -1,0 +1,41 @@
+# ====================================================================================
+#                  ROTEIRO DE TESTES OTIMIZADO - New Tracking AI v3.0 (14 Testes)
+#
+# Propósito: Validar todas as lógicas de interpretação da IA com o mínimo de
+# chamadas de API, focando em casos únicos e combinações complexas.
+# ====================================================================================
+
+# --- Suíte 1: Extração de Entidade Única (1 Teste) ---
+# Objetivo: Validar a extração de um ID numérico específico.
+me mostre a nota fiscal 55432
+
+# --- Suíte 2: Lógica de Datas Relativas e Absolutas (3 Testes) ---
+# Objetivo: Garantir que a IA entende "hoje", "última semana" e um intervalo explícito.
+quais notas foram entregues hoje?
+o que foi baixado na última semana?
+notas previstas entre 1 e 15 de setembro de 2025
+
+# --- Suíte 3: Mapeamento de Filtros de Categoria (3 Testes) ---
+# Objetivo: Testar um exemplo de cada tipo de filtro de entidade para garantir o mapeamento.
+notas com operação InBound-IPO
+uais notas foram retidas?
+me mostre as notas com status DO DIA
+
+# --- Suíte 4: Desambiguação, Sinônimos e Geografia (4 Testes) ---
+# Objetivo: Validar as regras de negócio mais complexas e a inteligência contextual.
+# Teste de ambiguidade (evento com data vs. estado sem data)
+notas entregues ontem
+notas com status entregue
+# Teste de sinônimo e ordenação
+notas rodando ordenadas pelo mais caro
+# Teste de hierarquia geográfica
+mostre as notas para a cidade de São Paulo
+
+# --- Suíte 5: Combinação Complexa (Stress Test) (1 Teste) ---
+# Objetivo: Garantir que a IA consegue lidar com múltiplos filtros de diferentes tipos simultaneamente.
+quais notas da transportadora RápidoLog para Manaus foram baixadas na semana passada e estão com análise ATRASO?
+
+# --- Suíte 6: Consulta Vaga (Fallback) (2 Testes) ---
+# Objetivo: Assegurar que a IA retorna um JSON nulo para perguntas fora de escopo.
+qual o status da entrega?
+quais são os clientes?

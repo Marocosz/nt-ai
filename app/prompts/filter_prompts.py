@@ -3,45 +3,51 @@ from datetime import datetime, timedelta
 
 # --- 1. O Otimizador de Query ---
 enhancer_template = """
-Sua tarefa é reescrever a pergunta do usuário para ser mais clara, completa e explícita. Corrija erros de digitação e expanda abreviações, mas seguindo regras estritas de preservação. Responda APENAS com a frase reescrita.
+Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é normalizar a pergunta do usuário de forma segura e previsível. Sua diretriz principal é **preservar 100% da intenção original do usuário.** Você nunca deve adicionar ou remover informações ou filtros. Responda APENAS com a frase reescrita.
 
---- REGRAS DE PRESERVAÇÃO DE TERMOS DE NEGÓCIO (REGRA MAIS IMPORTANTE) ---
-As seguintes palavras são termos técnicos do sistema e NÃO DEVEM ser alteradas, traduzidas ou substituídas por sinônimos genéricos. Apenas corrija a gramática ao redor delas.
-- Termos de Evento de Data: "agenda", "entregue", "emitido", "previsto", "previsão real", "baixada".
-- Termos de Status Logístico: "ENTREGUE", "RETIDA", "TRÂNSITO".
-- Termos de Análise de Performance: "ATRASO", "DIA SEGUINTE", "DO DIA", "FUTURO", "PREVISTO PARA 2 DIAS".
-- Códigos de Operação: Qualquer termo que comece com "InBound-" ou "OutBound-" (ex: "InBound-IPO", "OutBound-SPO").
+--- REGRAS DE OURO (NÃO QUEBRE NUNCA) ---
+1.  **PROIBIDO ADICIONAR CONCEITOS:** Se o usuário pediu por "entregues", a frase final SÓ PODE conter "entregues". Nunca adicione "emitidas" ou qualquer outro evento que não estava lá.
+2.  **PROIBIDO REMOVER CONCEITOS:** Se o usuário mencionou um status ("rodando") e uma ordenação ("mais caro"), a frase final DEVE conter AMBOS os conceitos traduzidos.
 
---- REGRAS GERAIS DE REESCRITA ---
-1. Expanda abreviações comuns: "nf" -> "nota fiscal", "sp" -> "estado de São Paulo", "transp" -> "transportadora", "cli" -> "cliente".
-2. Normalize termos de status (apenas se não for um termo preservado): Se o usuário mencionar "com atraso", reescreva usando a frase "com status de análise ATRASO".
-3. Expanda códigos de operação ambíguos:
-    - Se o usuário digitar apenas "IPO", reescreva como "operação InBound-IPO ou OutBound-IPO".
-    - Se o usuário digitar apenas "MAO", reescreva como "operação InBound-MAO ou OutBound-MAO".
+--- TAREFAS PERMITIDAS (SUAS ÚNICAS FUNÇÕES) ---
+1.  **EXPANDIR ABREVIAÇÕES:**
+    - "nf" -> "nota fiscal"
+    - "sp" -> "para o estado de São Paulo"
+    - "cli" -> "do cliente"
+    - "transp" -> "da transportadora"
 
---- REGRAS DE PRIORIZAÇÃO DE CONTEXTO ---
-1. Se a pergunta mencionar tempo ("ontem", "hoje", "semana passada") junto com um evento de data ("entregue", "emitido", "baixada"), mantenha ambos, mas priorize a clareza temporal (ex: "notas entregues ontem").
-2. Se a pergunta mencionar tempo e performance simultaneamente ("ontem com atraso"), preserve ambos os conceitos.
-3. Se a pergunta for genérica (sem tempo, status ou operação), apenas normalize o texto, sem adicionar contexto.
-4. Utilize expressões variadas de ação, escolhendo naturalmente entre:
-   - "Me mostre", "Mostre", "Liste", ou "Quais são", conforme o tipo da frase original.
-5. Se houver dois eventos de data diferentes ("emitidas ontem e entregues hoje"), preserve ambos, mas mantenha a sequência cronológica natural. 
-6. Sempre inicie a frase reescrita com letra maiúscula, mantendo o formato interrogativo ou declarativo original. 
-7. Nunca adicione contexto, filtro ou status que o usuário não mencionou explicitamente.
+2.  **MAPEAMENTO DE SINÔNIMOS PARA TERMOS DE NEGÓCIO:**
+    - "com atraso" -> "com status de análise ATRASO"
+    - "rodando", "viajando", "a caminho" -> "em trânsito"
+    - "paradas na fiscalização", "bloqueadas" -> "retidas"
+    - "ordenar pelo mais caro", "ordenar pelo maior valor" -> "ordenadas pelo maior valor"
+    - "ordenar pelo mais barato", "ordenar pelo menor valor" -> "ordenadas pelo menor valor"
 
-Exemplos:
+3.  **NORMALIZAR ESTRUTURA DA FRASE:** Inicie com letra maiúscula e mantenha o tom (pergunta ou comando), usando verbos como "Me mostre", "Liste", "Quais são".
+
+4.  **PRESERVAR ESPECIFICIDADE GEOGRÁFICA:** Se o usuário especificar "cidade de", mantenha essa estrutura na frase reescrita.
+
+--- EXEMPLOS QUE ILUSTRAM AS REGRAS ---
 ---
-Pergunta Original: "nf entregues ontem sp"
-Pergunta Reescrita: "Me mostre as notas fiscais que foram entregues ontem para o estado de São Paulo"
+Pergunta Original: "quais notas foram entregues hoje?"
+Pergunta Reescrita: "Quais notas fiscais foram entregues hoje?"
+(Explicação: Apenas expandiu "nf" para "nota fiscal". Não adicionou "emitidas".)
 ---
-Pergunta Original: "notas do cli acme transp veloz com atraso"
-Pergunta Reescrita: "Me mostre as notas do cliente ACME da transportadora Veloz com status de análise ATRASO"
+Pergunta Original: "notas rodando ordenadas pelo mais caro"
+Pergunta Reescrita: "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
+(Explicação: Mapeou "rodando" para "em trânsito" E "mais caro" para "maior valor", preservando ambos os conceitos.)
+---
+Pergunta Original: "nf do cli acme transp veloz com atraso"
+Pergunta Reescrita: "Me mostre as notas fiscais do cliente ACME da transportadora Veloz com status de análise ATRASO"
+(Explicação: Expandiu abreviações e mapeou o sinônimo de status.)
 ---
 Pergunta Original: "o que foi baixado na ult sem"
 Pergunta Reescrita: "O que foi baixado na última semana"
+(Explicação: Corrigiu a abreviação/erro de digitação.)
 ---
-Pergunta Original: "notas para IPO"
-Pergunta Reescrita: "Me mostre as notas fiscais para operação InBound-IPO ou OutBound-IPO"
+Pergunta Original: "notas para a cidade de São Paulo"
+Pergunta Reescrita: "Me mostre as notas fiscais para a cidade de São Paulo"
+(Explicação: A especificação "cidade de" foi preservada para não generalizar para o estado.)
 ---
 
 Pergunta Original: {query}
@@ -53,6 +59,7 @@ QUERY_ENHANCER_PROMPT = PromptTemplate.from_template(enhancer_template)
 # --- 2. O Parser de JSON ---
 parser_template = """
 Você é um assistente especialista que analisa um texto claro e o converte para um objeto JSON de filtros. Sua resposta deve ser APENAS o objeto JSON, sem nenhum texto adicional.
+Sua tarefa principal é extrair TODOS os filtros mencionados. A ordenação é uma tarefa secundária. Não ignore um filtro para aplicar uma ordenação.
 
 A data de referência para cálculos é {today}.
 
@@ -81,14 +88,14 @@ Mapeamento para "TipoData" (eventos com data):
 Mapeamento para "Operacao" (propósito do transporte):
 Valores possíveis: "InBound-IPO", "InBound-MAO", "InBound-UDI", "OutBound-BAR", "OutBound-BAR-MAT.PRIMA", "OutBound-IPO", "OutBound-MAO", "OutBound-RIO", "OutBound-SPO", "OutBound-UDI".
 
---- MAPEAMENTO CONTEXTUAL PARA "SituacaoNF" (estado logístico) ---
+--- MAPEAMENTO CONTEXTUAL PARA "SituacaoNF" (estado logístico) ---  
 Use estas definições para entender a intenção do usuário sobre o estado atual da nota:
 - "ENTREGUE": A entrega foi concluída com sucesso. Sinônimos: "entregas finalizadas", "já chegaram", "concluídas".
 - "RETIDA": A entrega está parada por um problema externo, geralmente fiscal. Sinônimos: "retidas", "paradas na fiscalização", "bloqueadas".
 - "TRÂNSITO": A entrega está em movimento, a caminho do destino. Sinônimos: "em trânsito", "rodando", "viajando", "a caminho".
 ---
 
---- MAPEAMENTO CONTEXTUAL PARA "StatusAnaliseData" (performance em relação ao prazo) ---
+--- O campo "StatusAnaliseData" DEVE conter EXATAMENTE um dos seguintes valores: "ATRASO", "DIA SEGUINTE", ... Não use sinônimos ou variações no valor final do JSON. ---
 Use estas definições para entender a intenção do usuário:
 - "ATRASO": A entrega está atrasada em relação ao prazo. Sinônimos: "atrasado", "com atraso", "fora do prazo".
 - "DIA SEGUINTE": A entrega está prevista para o dia seguinte (amanhã). Sinônimos: "previsto para amanhã".
@@ -106,6 +113,7 @@ Regras de Ambiguidade (TipoData vs. SituacaoNF):
 - Se uma palavra como "entregue", "emitido" ou "baixada" for usada JUNTO com um período de tempo (ex: "ontem", "hoje", "na semana passada", "em setembro"), priorize o preenchimento de "TipoData".
 - Se uma palavra que descreve um estado (ex: "em trânsito", "retida") for usada sem um período de tempo claro, priorize o preenchimento de "SituacaoNF".
 - Se um termo como "entregue" for usado sem um período de tempo, priorize o preenchimento de "SituacaoNF" com o valor 'ENTREGUE'.
+- **Regra Especial para 'Entregue':** A palavra 'entregue' pode significar duas coisas. Se usada com um período de tempo ('entregues ontem'), ela é um evento de data e preenche `TipoData`. Se usada como um estado ('status entregue'), ela descreve a situação logística atual e DEVE preencher `SituacaoNF`, não `StatusAnaliseData`.
 
 Regras de Localização:
 - Se o usuário mencionar uma sigla de 2 letras da lista de "UFDestino", preencha o campo "UFDestino".
@@ -166,6 +174,9 @@ JSON: {{"NF": null, "DE": "2025-09-01", "ATE": "2025-09-15", "TipoData": "4", "C
 Texto: "notas entregues ontem ordenadas pela data de entrega mais recente"
 JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "2", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": "data_entrega", "SortDirection": "DESC"}}
 ---
+Texto: "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": "valor_nf", "SortDirection": "DESC"}}
+---
 Texto: "notas previstas para amanhã"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DIA SEGUINTE", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
@@ -175,6 +186,12 @@ JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, 
 Texto: "liste as notas emitidas hoje para SP que estão em trânsito"
 JSON: {{"NF": null, "DE": "{today}", "ATE": "{today}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": "SP", "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
+Texto: "Quais notas fiscais têm status de entregue?"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "ENTREGUE", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Texto: "Liste as notas da transportadora Expresso Veloz para a cidade de Salvador que foram emitidas ontem"
+JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "3", "Cliente": null, "Transportadora": "Expresso Veloz", "UFDestino": "BA", "CidadeDestino": "Salvador", "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
 Texto: "qual o status da entrega?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
@@ -182,7 +199,7 @@ Texto: "quais são os clientes?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 Texto: "notas emitidas ontem e entregues hoje"
-JSON: {"NF": null, "DE": null, "ATE": null, "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "ENTREGUE", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "ENTREGUE", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 
 Agora, analise o seguinte texto:
