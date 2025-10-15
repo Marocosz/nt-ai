@@ -22,94 +22,71 @@ OR ALTER PROC [dbo].[SP_TK_NOTAS_AI_HOM] (
 SET
     NOCOUNT ON;
 
--- Ajusta a data final para incluir todas as horas do dia.
+-- =====================================================================================
+-- NOVA LÓGICA: Define um período padrão de 7 dias se nenhum for fornecido.
+-- =====================================================================================
+IF @DE IS NULL AND @ATE IS NULL
+BEGIN
+    PRINT 'Período de data não fornecido. Assumindo o padrão de últimos 7 dias.';
+    -- Define a data de início para 7 dias atrás, começando à meia-noite.
+    SET @DE = CAST(DATEADD(DAY, -7, GETDATE()) AS DATE);
+    -- Define a data de término para hoje, terminando às 23:59:59.
+    SET @ATE = GETDATE(); -- GETDATE() é usado aqui para ser ajustado pela lógica abaixo.
+END;
+
+-- Ajusta a data final para incluir todas as horas do dia (23:59:59).
+-- Esta lógica agora funciona tanto para datas passadas quanto para a data padrão definida acima.
 IF @ATE IS NOT NULL
     SET @ATE = DATEADD(SECOND, -1, CAST(DATEADD(DAY, 1, CAST(@ATE AS DATE)) AS DATETIME));
 
--- 1. PRÉ-FILTRAGEM (Otimização Principal)
--- Insere em uma tabela temporária apenas os dados que correspondem aos filtros primários.
+-- Adiciona uma salvaguarda para evitar full scans acidentais.
+-- Se nenhum filtro principal for fornecido (mesmo após o default de data), a procedure não executa.
+IF @NF IS NULL
+   AND @DE IS NULL
+   AND @Cliente IS NULL
+   AND @Transportadora IS NULL
+   AND @UFDestino IS NULL
+   AND @CidadeDestino IS NULL
+   AND @Operacao IS NULL
+   AND @SituacaoNF IS NULL
+   AND @StatusAnaliseData IS NULL
+   AND @CNPJRaizTransp IS NULL
+BEGIN
+    PRINT 'Nenhum filtro principal fornecido. A execução foi interrompida para evitar sobrecarga.';
+    SELECT TOP 0 * FROM VW_NOTAS;
+    RETURN;
+END
+
+-- 1. PRÉ-FILTRAGEM (Lógica Corrigida)
 SELECT
     * INTO #FilteredData
 FROM
     VW_NOTAS vw
 WHERE
-    -- Filtro por Nota Fiscal (tem prioridade)
+    -- Lógica de Data (agora é uma condição AND opcional)
     (
-        @NF IS NOT NULL
-        AND vw.NotaFiscal = @NF
-    )
-    OR -- Filtro por Período de Data (se NF não for especificada)
-    (
-        @NF IS NULL
-        AND @TipoData IS NOT NULL
-        AND (
-            (
-                @TipoData = '1'
-                AND vw.DataAgenda BETWEEN @DE
-                AND @ATE
-            )
-            OR (
-                @TipoData = '2'
-                AND vw.DataEntrega BETWEEN @DE
-                AND @ATE
-            )
-            OR (
-                @TipoData = '3'
-                AND vw.EmissaoNota BETWEEN @DE
-                AND @ATE
-            )
-            OR (
-                @TipoData = '4'
-                AND vw.PrevisaoEntrega BETWEEN @DE
-                AND @ATE
-            )
-            OR (
-                @TipoData = '5'
-                AND vw.PrevisaoReal BETWEEN @DE
-                AND @ATE
-            )
-            OR (
-                @TipoData = '6'
-                AND vw.DataOcorrencia BETWEEN @DE
-                AND @ATE
-                AND vw.CodOcorrencia IN (1, 7)
-            )
+        @TipoData IS NULL OR -- Se @TipoData não for fornecido, esta condição é ignorada
+        (
+            (@TipoData = '1' AND vw.DataAgenda BETWEEN @DE AND @ATE) OR
+            (@TipoData = '2' AND vw.DataEntrega BETWEEN @DE AND @ATE) OR
+            (@TipoData = '3' AND vw.EmissaoNota BETWEEN @DE AND @ATE) OR
+            (@TipoData = '4' AND vw.PrevisaoEntrega BETWEEN @DE AND @ATE) OR
+            (@TipoData = '5' AND vw.PrevisaoReal BETWEEN @DE AND @ATE) OR
+            (@TipoData = '6' AND vw.DataOcorrencia BETWEEN @DE AND @ATE AND vw.CodOcorrencia IN (1, 7))
         )
-    ) -- Filtros adicionais da IA (aplicados já nesta primeira etapa para máxima performance)
-    AND (
-        @Cliente IS NULL
-        OR vw.Tomador LIKE '%' + @Cliente + '%'
     )
-    AND (
-        @Transportadora IS NULL
-        OR vw.Parceiro LIKE '%' + @Transportadora + '%'
-    )
-    AND (
-        @UFDestino IS NULL
-        OR vw.UFDestino = @UFDestino
-    )
-    AND (
-        @CidadeDestino IS NULL
-        OR vw.Destino LIKE '%' + @CidadeDestino + '%'
-    )
-    AND (
-        @Operacao IS NULL
-        OR vw.Operacao = @Operacao
-    )
-    AND (
-        @SituacaoNF IS NULL
-        OR vw.SituacaoNF = @SituacaoNF
-    )
-    AND (
-        @StatusAnaliseData IS NULL
-        OR vw.AnaliseData = @StatusAnaliseData
-    )
-    AND (
-        @CNPJRaizTransp IS NULL
-        OR vw.CNPJRaizTransp = @CNPJRaizTransp
-    );
+    -- Filtros adicionais da IA
+    AND (@NF IS NULL OR vw.NotaFiscal = @NF)
+    AND (@Cliente IS NULL OR vw.Tomador LIKE '%' + @Cliente + '%')
+    AND (@Transportadora IS NULL OR vw.Parceiro LIKE '%' + @Transportadora + '%')
+    AND (@UFDestino IS NULL OR vw.UFDestino = @UFDestino)
+    AND (@CidadeDestino IS NULL OR vw.Destino LIKE '%' + @CidadeDestino + '%')
+    AND (@Operacao IS NULL OR vw.Operacao = @Operacao)
+    AND (@SituacaoNF IS NULL OR vw.SituacaoNF = @SituacaoNF)
+    AND (@StatusAnaliseData IS NULL OR vw.AnaliseData = @StatusAnaliseData)
+    AND (@CNPJRaizTransp IS NULL OR vw.CNPJRaizTransp = @CNPJRaizTransp);
 
--- 2. CONSULTA PRINCIPAL (Executada uma única vez sobre os dados pré-filtrados)
+-- 2. CONSULTA PRINCIPAL (O restante da sua procedure continua aqui, inalterado)
 SELECT
     VW.SituacaoNF,
     VW.BancoOrigem,
@@ -221,7 +198,7 @@ SELECT
     CASE
         COALESCE(
             NS.STATUS_REAVALIACAO_PARCEIRO,
-            NS_PROTHEUS.STATUS_REAVALIACAO_PARCEIRO
+            NS_PROTHEUS.STATUS_REAVALIACAO_PARCEiro
         )
         WHEN '501' THEN 'Concordo'
         WHEN '502' THEN 'Discordo'
