@@ -1,7 +1,7 @@
 from langchain_core.prompts import PromptTemplate
 from datetime import datetime, timedelta
 
-# --- 1. O Otimizador de Query (Versão 3.1 - com Preservação de Termos de Negócio) ---
+# --- 1. O Otimizador de Query ---
 enhancer_template = """
 Sua tarefa é reescrever a pergunta do usuário para ser mais clara, completa e explícita. Corrija erros de digitação e expanda abreviações, mas seguindo regras estritas de preservação. Responda APENAS com a frase reescrita.
 
@@ -18,6 +18,16 @@ As seguintes palavras são termos técnicos do sistema e NÃO DEVEM ser alterada
 3. Expanda códigos de operação ambíguos:
     - Se o usuário digitar apenas "IPO", reescreva como "operação InBound-IPO ou OutBound-IPO".
     - Se o usuário digitar apenas "MAO", reescreva como "operação InBound-MAO ou OutBound-MAO".
+
+--- REGRAS DE PRIORIZAÇÃO DE CONTEXTO ---
+1. Se a pergunta mencionar tempo ("ontem", "hoje", "semana passada") junto com um evento de data ("entregue", "emitido", "baixada"), mantenha ambos, mas priorize a clareza temporal (ex: "notas entregues ontem").
+2. Se a pergunta mencionar tempo e performance simultaneamente ("ontem com atraso"), preserve ambos os conceitos.
+3. Se a pergunta for genérica (sem tempo, status ou operação), apenas normalize o texto, sem adicionar contexto.
+4. Utilize expressões variadas de ação, escolhendo naturalmente entre:
+   - "Me mostre", "Mostre", "Liste", ou "Quais são", conforme o tipo da frase original.
+5. Se houver dois eventos de data diferentes ("emitidas ontem e entregues hoje"), preserve ambos, mas mantenha a sequência cronológica natural. 
+6. Sempre inicie a frase reescrita com letra maiúscula, mantendo o formato interrogativo ou declarativo original. 
+7. Nunca adicione contexto, filtro ou status que o usuário não mencionou explicitamente.
 
 Exemplos:
 ---
@@ -40,7 +50,7 @@ Pergunta Reescrita:
 QUERY_ENHANCER_PROMPT = PromptTemplate.from_template(enhancer_template)
 
 
-# --- 2. O Parser de JSON (Versão 4.5 - Final com Contexto e Novos Exemplos) ---
+# --- 2. O Parser de JSON ---
 parser_template = """
 Você é um assistente especialista que analisa um texto claro e o converte para um objeto JSON de filtros. Sua resposta deve ser APENAS o objeto JSON, sem nenhum texto adicional.
 
@@ -102,12 +112,14 @@ Regras de Localização:
 - Se um nome pode ser tanto cidade quanto estado (ex: "São Paulo"), priorize o preenchimento de "UFDestino" com a sigla correspondente (ex: "SP"), a menos que o usuário especifique "cidade de".
 - Extraia o nome da cidade para "CidadeDestino" sempre que possível.
 
---- REGRAS DE PRECISÃO (Adicionadas para corrigir os testes) ---
-1. Extração Completa de Datas: Se você identificar um período de tempo (ex: "ontem", "hoje"), você DEVE preencher os campos "DE" e "ATE" com as datas correspondentes, além do "TipoData".
-2. Prioridade de Filtro: Se um `StatusAnaliseData` como 'DO DIA' ou 'DIA SEGUINTE' for identificado, priorize este filtro e NÃO extraia um `TipoData` ao mesmo tempo, a menos que o usuário combine os dois termos (ex: 'notas emitidas com status do dia').
-3. Restrição de Inferência: NÃO infira filtros que não foram explicitamente mencionados. Se a pergunta for vaga (ex: "quais são as notas?"), todos os filtros devem ser null.
+--- REGRAS DE PRECISÃO ---
+1. Extração Completa de Datas: Se você identificar um período de tempo (ex: "ontem", "hoje"), você DEVE preencher os campos "DE" e "ATE" com as datas correspondentes.
+2. Prioridade de Filtro: Se um `StatusAnaliseData` como 'DO DIA' ou 'DIA SEGUINTE' for identificado, priorize este filtro e NÃO extraia um `TipoData` ao mesmo tempo.
+3. Restrição de Inferência: NÃO infira filtros que não foram explicitamente mencionados. Se a pergunta for vaga, todos os filtros devem ser null.
 4. Regra para Códigos: Valores para "Operacao" (como "OutBound-SPO") são códigos únicos e NÃO DEVEM ser divididos ou interpretados. Extraia o valor exato.
-5. Associação de Data e Tipo: Se um filtro de data (`DE`/`ATE`) for preenchido com base em um evento (como 'entregue', 'emitido'), o `TipoData` correspondente DEVE ser preenchido.
+5. Associação de Data e Tipo: Se um filtro de data (`DE`/`ATE`) for preenchido com base em um evento (como 'entregue' ou 'emitido'), o `TipoData` correspondente DEVE ser preenchido.
+6. Se o texto contiver uma faixa explícita ("de X até Y"), sempre converta para formato completo ISO (AAAA-MM-DD).
+7. Se contiver "última semana" ou "semana passada", defina "DE" = {last_week_start} e "ATE" = {today}.
 ---
 
 Regras de Ordenação ("SortColumn"):
@@ -126,6 +138,19 @@ Regras Gerais:
 - Se uma entidade não for encontrada, seu valor no JSON deve ser null.
 - Datas relativas: 'ontem' é {yesterday}, 'hoje' é {today}, 'semana passada' é o período de {last_week_start} a {today}.
 - Se a busca for por um número de NF, todos os outros campos devem ser null.
+
+--- REGRAS DE CONSISTÊNCIA FINAL DO JSON ---
+1. Se "NF" for preenchido, todos os outros campos devem ser null.
+2. Se "TipoData" estiver presente, "StatusAnaliseData" deve ser null, salvo se o texto mencionar explicitamente dois contextos.
+3. Se "StatusAnaliseData" for identificado, "SituacaoNF" deve ser null.
+4. Se "SortColumn" for null, "SortDirection" também deve ser null.
+
+--- REGRAS DE PRIORIDADE HIERÁRQUICA ---
+1. Tempo explícito (ex: "ontem", "hoje", "semana passada") tem prioridade máxima — ele define "DE" e "ATE".
+2. Eventos de data ("emitido", "entregue", "baixada") têm prioridade média — preenchem "TipoData".
+3. Status logístico ("TRÂNSITO", "RETIDA", "ENTREGUE") têm prioridade abaixo dos eventos.
+4. Status de análise ("DO DIA", "ATRASO") têm prioridade sobre status logístico, mas nunca coexistem.
+
 
 Exemplos:
 ---
@@ -147,14 +172,17 @@ JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, 
 Texto: "me mostre as notas com status DO DIA"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DO DIA", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "qual o status da entrega?"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
----
 Texto: "liste as notas emitidas hoje para SP que estão em trânsito"
 JSON: {{"NF": null, "DE": "{today}", "ATE": "{today}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": "SP", "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
+Texto: "qual o status da entrega?"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
 Texto: "quais são os clientes?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Texto: "notas emitidas ontem e entregues hoje"
+JSON: {"NF": null, "DE": null, "ATE": null, "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "ENTREGUE", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}
 ---
 
 Agora, analise o seguinte texto:
