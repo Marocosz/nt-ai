@@ -1,12 +1,12 @@
 CREATE
 OR ALTER PROC [dbo].[SP_TK_NOTAS_AI_HOM] (
-    -- Parâmetros Originais
+    -- Parâmetros de filtro principais
     @IdUsuario INT,
     @NF INT = NULL,
     @DE DATETIME = NULL,
     @ATE DATETIME = NULL,
     @TipoData VARCHAR(1) = NULL,
-    -- Novos Parâmetros para a IA (Opcionais)
+    -- Parâmetros de filtro de texto e categoria
     @Cliente VARCHAR(100) = NULL,
     @Transportadora VARCHAR(100) = NULL,
     @UFDestino CHAR(2) = NULL,
@@ -15,78 +15,160 @@ OR ALTER PROC [dbo].[SP_TK_NOTAS_AI_HOM] (
     @SituacaoNF VARCHAR(100) = NULL,
     @StatusAnaliseData VARCHAR(100) = NULL,
     @CNPJRaizTransp VARCHAR(8) = NULL,
-    -- Novos Parâmetros de Ordenação
+    -- Parâmetros para ordenação dinâmica
     @SortColumn VARCHAR(50) = NULL,
     @SortDirection VARCHAR(4) = 'ASC'
 ) AS BEGIN
 SET
     NOCOUNT ON;
 
--- =====================================================================================
--- NOVA LÓGICA: Define um período padrão de 7 dias se nenhum for fornecido.
--- =====================================================================================
-IF @DE IS NULL AND @ATE IS NULL
-BEGIN
-    PRINT 'Período de data não fornecido. Assumindo o padrão de últimos 7 dias.';
-    -- Define a data de início para 7 dias atrás, começando à meia-noite.
-    SET @DE = CAST(DATEADD(DAY, -7, GETDATE()) AS DATE);
-    -- Define a data de término para hoje, terminando às 23:59:59.
-    SET @ATE = GETDATE(); -- GETDATE() é usado aqui para ser ajustado pela lógica abaixo.
+/*
+ * Bloco 1: Preparação de Parâmetros
+ * - Define um período de consulta padrão (últimos 7 dias) se nenhum for especificado.
+ * - Ajusta a data final (@ATE) para garantir que a consulta inclua o dia inteiro (até 23:59:59).
+ */
+-- Se nenhum período de data for informado, define o padrão para os últimos 7 dias.
+IF @DE IS NULL
+AND @ATE IS NULL BEGIN PRINT 'Período de data não fornecido. Assumindo o padrão de últimos 7 dias.';
+
+SET
+    @DE = CAST(DATEADD(DAY, -7, GETDATE()) AS DATE);
+
+SET
+    @ATE = GETDATE();
+
 END;
 
--- Ajusta a data final para incluir todas as horas do dia (23:59:59).
--- Esta lógica agora funciona tanto para datas passadas quanto para a data padrão definida acima.
+-- Ajusta a data final para abranger todo o dia, terminando em 23:59:59.
 IF @ATE IS NOT NULL
-    SET @ATE = DATEADD(SECOND, -1, CAST(DATEADD(DAY, 1, CAST(@ATE AS DATE)) AS DATETIME));
+SET
+    @ATE = DATEADD(
+        SECOND,
+        -1,
+        CAST(DATEADD(DAY, 1, CAST(@ATE AS DATE)) AS DATETIME)
+    );
 
--- Adiciona uma salvaguarda para evitar full scans acidentais.
--- Se nenhum filtro principal for fornecido (mesmo após o default de data), a procedure não executa.
+/*
+ * Bloco 2: Validação e Otimização de Performance
+ * - Interrompe a execução se nenhum filtro principal for fornecido, para evitar
+ * consultas massivas e não intencionais (full scan) na view.
+ */
+-- Salvaguarda para performance: Impede a execução se nenhum filtro relevante for passado.
 IF @NF IS NULL
-   AND @DE IS NULL
-   AND @Cliente IS NULL
-   AND @Transportadora IS NULL
-   AND @UFDestino IS NULL
-   AND @CidadeDestino IS NULL
-   AND @Operacao IS NULL
-   AND @SituacaoNF IS NULL
-   AND @StatusAnaliseData IS NULL
-   AND @CNPJRaizTransp IS NULL
-BEGIN
-    PRINT 'Nenhum filtro principal fornecido. A execução foi interrompida para evitar sobrecarga.';
-    SELECT TOP 0 * FROM VW_NOTAS;
-    RETURN;
-END
+AND @DE IS NULL
+AND @Cliente IS NULL
+AND @Transportadora IS NULL
+AND @UFDestino IS NULL
+AND @CidadeDestino IS NULL
+AND @Operacao IS NULL
+AND @SituacaoNF IS NULL
+AND @StatusAnaliseData IS NULL
+AND @CNPJRaizTransp IS NULL BEGIN PRINT 'Nenhum filtro principal fornecido. A execução foi interrompida para evitar sobrecarga.';
 
--- 1. PRÉ-FILTRAGEM (Lógica Corrigida)
+SELECT
+    TOP 0 *
+FROM
+    VW_NOTAS;
+
+-- Retorna a estrutura da tabela vazia.
+RETURN;
+
+END;
+
+/*
+ * Bloco 3: Pré-Filtragem (Otimização de Consulta)
+ * - O passo mais importante para a performance da procedure.
+ * - Seleciona um subconjunto de dados da view principal (VW_NOTAS) com base em
+ * todos os filtros fornecidos e o armazena em uma tabela temporária (#FilteredData).
+ * - Todas as operações subsequentes (joins, ordenação) serão executadas
+ * apenas sobre este conjunto de dados reduzido, em vez da view inteira.
+ */
 SELECT
     * INTO #FilteredData
 FROM
     VW_NOTAS vw
 WHERE
-    -- Lógica de Data (agora é uma condição AND opcional)
+    -- Aplica o filtro de data, apenas se @TipoData for fornecido.
     (
-        @TipoData IS NULL OR -- Se @TipoData não for fornecido, esta condição é ignorada
-        (
-            (@TipoData = '1' AND vw.DataAgenda BETWEEN @DE AND @ATE) OR
-            (@TipoData = '2' AND vw.DataEntrega BETWEEN @DE AND @ATE) OR
-            (@TipoData = '3' AND vw.EmissaoNota BETWEEN @DE AND @ATE) OR
-            (@TipoData = '4' AND vw.PrevisaoEntrega BETWEEN @DE AND @ATE) OR
-            (@TipoData = '5' AND vw.PrevisaoReal BETWEEN @DE AND @ATE) OR
-            (@TipoData = '6' AND vw.DataOcorrencia BETWEEN @DE AND @ATE AND vw.CodOcorrencia IN (1, 7))
+        @TipoData IS NULL
+        OR (
+            (
+                @TipoData = '1'
+                AND vw.DataAgenda BETWEEN @DE
+                AND @ATE
+            )
+            OR (
+                @TipoData = '2'
+                AND vw.DataEntrega BETWEEN @DE
+                AND @ATE
+            )
+            OR (
+                @TipoData = '3'
+                AND vw.EmissaoNota BETWEEN @DE
+                AND @ATE
+            )
+            OR (
+                @TipoData = '4'
+                AND vw.PrevisaoEntrega BETWEEN @DE
+                AND @ATE
+            )
+            OR (
+                @TipoData = '5'
+                AND vw.PrevisaoReal BETWEEN @DE
+                AND @ATE
+            )
+            OR (
+                @TipoData = '6'
+                AND vw.DataOcorrencia BETWEEN @DE
+                AND @ATE
+                AND vw.CodOcorrencia IN (1, 7)
+            )
         )
+    ) -- Aplica os demais filtros opcionais.
+    AND (
+        @NF IS NULL
+        OR vw.NotaFiscal = @NF
     )
-    -- Filtros adicionais da IA
-    AND (@NF IS NULL OR vw.NotaFiscal = @NF)
-    AND (@Cliente IS NULL OR vw.Tomador LIKE '%' + @Cliente + '%')
-    AND (@Transportadora IS NULL OR vw.Parceiro LIKE '%' + @Transportadora + '%')
-    AND (@UFDestino IS NULL OR vw.UFDestino = @UFDestino)
-    AND (@CidadeDestino IS NULL OR vw.Destino LIKE '%' + @CidadeDestino + '%')
-    AND (@Operacao IS NULL OR vw.Operacao = @Operacao)
-    AND (@SituacaoNF IS NULL OR vw.SituacaoNF = @SituacaoNF)
-    AND (@StatusAnaliseData IS NULL OR vw.AnaliseData = @StatusAnaliseData)
-    AND (@CNPJRaizTransp IS NULL OR vw.CNPJRaizTransp = @CNPJRaizTransp);
+    AND (
+        @Cliente IS NULL
+        OR vw.Tomador LIKE '%' + @Cliente + '%'
+    )
+    AND (
+        @Transportadora IS NULL
+        OR vw.Parceiro LIKE '%' + @Transportadora + '%'
+    )
+    AND (
+        @UFDestino IS NULL
+        OR vw.UFDestino = @UFDestino
+    )
+    AND (
+        @CidadeDestino IS NULL
+        OR vw.Destino LIKE '%' + @CidadeDestino + '%'
+    )
+    AND (
+        @Operacao IS NULL
+        OR vw.Operacao = @Operacao
+    )
+    AND (
+        @SituacaoNF IS NULL
+        OR vw.SituacaoNF = @SituacaoNF
+    )
+    AND (
+        @StatusAnaliseData IS NULL
+        OR vw.AnaliseData = @StatusAnaliseData
+    )
+    AND (
+        @CNPJRaizTransp IS NULL
+        OR vw.CNPJRaizTransp = @CNPJRaizTransp
+    );
 
--- 2. CONSULTA PRINCIPAL (O restante da sua procedure continua aqui, inalterado)
+/*
+ * Bloco 4: Consulta Principal e Enriquecimento de Dados
+ * - Seleciona os dados da tabela temporária pré-filtrada (#FilteredData).
+ * - Realiza os JOINs necessários para enriquecer os dados (ex: nomes de usuários,
+ * informações de nível de serviço, etc.).
+ * - Formata as colunas de data e status para exibição no formato padrão (DD/MM/AAAA).
+ */
 SELECT
     VW.SituacaoNF,
     VW.BancoOrigem,
@@ -101,14 +183,13 @@ SELECT
     VW.SerieNF,
     VW.NotaFiscal,
     VW.ClienteDestino,
+    -- Formata a data de emissão, tratando valores nulos/padrão.
     CASE
-        VW.EmissaoNota
-        WHEN '1900-01-01' THEN ''
+        WHEN VW.EmissaoNota = '1900-01-01' THEN ''
         ELSE CONVERT(varchar(20), VW.EmissaoNota, 103)
     END AS EmissaoNota,
     CASE
-        VW.MontagemCarga
-        WHEN '1900-01-01' THEN ''
+        WHEN VW.MontagemCarga = '1900-01-01' THEN ''
         ELSE CONVERT(varchar(20), VW.MontagemCarga, 103)
     END AS MontagemCarga,
     VW.ID_NFC,
@@ -117,33 +198,28 @@ SELECT
     VW.CODCON,
     VW.Documento,
     CASE
-        VW.DataExpedicao
-        WHEN '1900-01-01' THEN ''
+        WHEN VW.DataExpedicao = '1900-01-01' THEN ''
         ELSE CONVERT(varchar(20), VW.DataExpedicao, 103)
     END AS DataExpedicao,
     CASE
-        VW.PrevisaoEntrega
-        WHEN '1900-01-01' THEN ''
+        WHEN VW.PrevisaoEntrega = '1900-01-01' THEN ''
         ELSE CONVERT(varchar(20), VW.PrevisaoEntrega, 103)
     END AS PrevisaoEntrega,
     VW.Agenda,
     CASE
-        VW.DataAgenda
-        WHEN '1900-01-01' THEN ''
+        WHEN VW.DataAgenda = '1900-01-01' THEN ''
         ELSE CONVERT(varchar(20), VW.DataAgenda, 103) + ' ' + CONVERT(VARCHAR(8), VW.DataAgenda, 108)
     END AS DataAgenda,
     VW.DescricaoAgenda,
     CASE
-        VW.DataEntrega
-        WHEN '1900-01-01' THEN ''
+        WHEN VW.DataEntrega = '1900-01-01' THEN ''
         ELSE CONVERT(varchar(20), VW.DataEntrega, 103)
     END AS DataEntrega,
     VW.ValorNF,
     ISNULL(TS.Nome, 'SEM ASSOCIAÇÃO') AS Analista,
     VW.Ocorrencia AS Ocorrencia,
     CASE
-        VW.DataOcorrencia
-        WHEN '1900-01-01' THEN ''
+        WHEN VW.DataOcorrencia = '1900-01-01' THEN ''
         ELSE CONVERT(varchar(20), VW.DataOcorrencia, 103) + ' ' + CONVERT(VARCHAR(8), VW.DataOcorrencia, 108)
     END AS DataOcorrencia,
     VW.Observacao,
@@ -157,6 +233,7 @@ SELECT
     VW.CODDES,
     VW.CNPJRaizREM,
     VW.Avaliacao,
+    -- Tradução dos códigos de status de reavaliação do CRM para texto.
     CASE
         COALESCE(
             NS.STATUS_REAVALIACAO,
@@ -305,8 +382,7 @@ SELECT
     UPAG.Nome AS NomeUsuarioGESTOR_CRM,
     COALESCE(NS.Esteira, NS_PROTHEUS.Esteira) AS Esteira,
     CASE
-        VW.PrevisaoReal
-        WHEN '1900-01-01' THEN ''
+        WHEN VW.PrevisaoReal = '1900-01-01' THEN ''
         ELSE CONVERT(varchar(20), VW.PrevisaoReal, 103) + ' ' + CONVERT(VARCHAR(8), VW.PrevisaoReal, 108)
     END AS PrevisaoReal,
     VW.TipFrete,
@@ -329,7 +405,8 @@ SELECT
     ISNULL(VW.AnalistaTransp, 'SEM ASSOCIAÇÃO') AS AnalistaTransp
 FROM
     #FilteredData VW
-    LEFT JOIN TK_USUARIO TS WITH (NOLOCK) ON TS.IdUsuario = VW.IdUsuario
+    -- Realiza o JOIN com a tabela de usuários para obter o nome do analista principal.
+    LEFT JOIN TK_USUARIO TS WITH (NOLOCK) ON TS.IdUsuario = VW.IdUsuario -- Lógica de COALESCE para consolidar dados de nível de serviço de fontes diferentes (ex: Protheus vs. outros).
     LEFT JOIN TK_NIVEL_SERVICO NS WITH (NOLOCK) ON VW.BancoOrigem <> 'protheus'
     AND NS.BancoOrigem = VW.BancoOrigem
     AND NS.ID_NFC = VW.ID_NFC
@@ -367,18 +444,29 @@ FROM
     AND TRCS.CODTRANSP = VW.CODTRANSP
     AND TRCS.BancoOrigem = 'protheus'
     LEFT JOIN TK_USUARIO TST WITH (NOLOCK) ON TST.IdUsuario = TRCS.IdUsuario
+    /*
+     * Bloco 5: Filtragem de Permissão de Acesso
+     * - Aplica as regras de negócio para garantir que o usuário visualize apenas
+     * os dados aos quais tem permissão, com base em seu ID.
+     */
 WHERE
-    -- Filtro final de permissão de usuário
     (
-        @IdUsuario = 9999
+        @IdUsuario = 9999 -- Regra 1: O usuário 9999 (admin) pode ver todos os resultados.
         OR (
-            @IdUsuario = 8888
+            @IdUsuario = 8888 -- Regra 2: O usuário 8888 pode ver apenas notas sem analista associado.
             AND TS.IdUsuario IS NULL
         )
-        OR TS.IdUsuario = @IdUsuario
-        OR TST.IdUsuario = @IdUsuario
-    ) -- Ordenação dinâmica
+        OR TS.IdUsuario = @IdUsuario -- Regra 3: O usuário pode ver notas onde ele é o analista principal.
+        OR TST.IdUsuario = @IdUsuario -- Regra 4: O usuário pode ver notas associadas aos seus clientes/transportadoras.
+    )
+    /*
+     * Bloco 6: Ordenação Dinâmica e Finalização
+     * - Ordena o resultado com base nos parâmetros @SortColumn e @SortDirection.
+     * - Utiliza uma ordenação padrão (DataOcorrencia DESC) como critério de desempate.
+     * - Limpa os recursos temporários.
+     */
 ORDER BY
+    -- Ordenação por Data de Entrega
     CASE
         WHEN @SortColumn = 'data_entrega'
         AND @SortDirection = 'ASC' THEN VW.DataEntrega
@@ -387,6 +475,7 @@ ORDER BY
         WHEN @SortColumn = 'data_entrega'
         AND @SortDirection = 'DESC' THEN VW.DataEntrega
     END DESC,
+    -- Ordenação por Valor da Nota Fiscal
     CASE
         WHEN @SortColumn = 'valor_nf'
         AND @SortDirection = 'ASC' THEN VW.ValorNF
@@ -395,6 +484,7 @@ ORDER BY
         WHEN @SortColumn = 'valor_nf'
         AND @SortDirection = 'DESC' THEN VW.ValorNF
     END DESC,
+    -- Ordenação por Data de Emissão
     CASE
         WHEN @SortColumn = 'data_emissao'
         AND @SortDirection = 'ASC' THEN VW.EmissaoNota
@@ -403,10 +493,10 @@ ORDER BY
         WHEN @SortColumn = 'data_emissao'
         AND @SortDirection = 'DESC' THEN VW.EmissaoNota
     END DESC,
+    -- Ordenação Padrão (critério de desempate)
     VW.DataOcorrencia DESC;
 
--- Ordenação Padrão
--- Limpeza da tabela temporária
+-- Limpeza da tabela temporária para liberar recursos.
 DROP TABLE #FilteredData;
 SET
     NOCOUNT OFF;
