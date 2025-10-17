@@ -1,5 +1,5 @@
 # ====================================================================================
-#                  ROTEIRO DE TESTES OTIMIZADO - New Tracking Intent AI v3.0 (14 Testes)
+#                  ROTEIRO DE TESTES OTIMIZADO - New Tracking Intent AI 
 #
 # Propósito: Validar todas as lógicas de interpretação da IA com o mínimo de
 # chamadas de API, focando em casos únicos e combinações complexas.

@@ -1,7 +1,7 @@
 # ====================================================================================
 # ====================================================================================
 #
-#                    ROTEIRO DE TESTES - New Tracking Intent AI v3.0
+#                    ROTEIRO DE TESTES - New Tracking Intent AI
 #
 # Propósito do Arquivo:
 #
