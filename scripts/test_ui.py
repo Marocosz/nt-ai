@@ -4,11 +4,11 @@ import json
 
 # --- Configuração da Página ---
 st.set_page_config(
-    page_title="New Tracking AI - Teste",
+    page_title="New Tracking Intent AI - Teste",
     page_icon="🤖"
 )
 
-st.title("🤖 Interface de Teste - New Tracking AI")
+st.title("🤖 Interface de Teste - New Tracking Intent AI")
 st.header("Análise de Intenção de Busca")
 st.caption("Esta UI usa o endpoint de debug para mostrar os passos da IA.")
 

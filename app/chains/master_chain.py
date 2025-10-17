@@ -1,3 +1,40 @@
+# =================================================================================================
+# =================================================================================================
+#
+#               MÓDULO DE ORQUESTRAÇÃO DA CADEIA DE INTERPRETAÇÃO
+#
+# Visão Geral da Arquitetura Lógica:
+#
+# Este arquivo constrói e orquestra as cadeias de LangChain responsáveis por interpretar
+# a linguagem natural do usuário e traduzi-la para um objeto JSON estruturado.
+# A arquitetura segue o princípio de "Separação de Responsabilidades", operando como uma
+# linha de montagem em dois estágios principais:
+#
+# 1. A Cadeia de Normalização (`query_enhancer_chain`):
+#    - Atua como um "Tradutor" de linguagem.
+#    - Responsabilidade: Receber a pergunta bruta do usuário e normalizá-la de forma
+#      segura e previsível, sem alterar a intenção original.
+#    - Ação: Expande abreviações (ex: "nf" -> "nota fiscal") e mapeia sinônimos de
+#      negócio (ex: "rodando" -> "em trânsito").
+#
+# 2. A Cadeia de Parsing (`json_parser_chain`):
+#    - Atua como um "Especialista em Extração".
+#    - Responsabilidade: Receber a pergunta já normalizada e convertê-la em um
+#      objeto JSON preciso, com base em um conjunto de regras e exemplos.
+#    - Ação: Extrai todas as entidades relevantes (datas, status, locais, ordenação)
+#      e lida com a lógica de ambiguidade (ex: "entregues hoje" vs "status entregue").
+#
+# 3. Resiliência (`OutputFixingParser`):
+#    - A cadeia de parsing é equipada com um parser de auto-correção. Se o LLM gerar
+#      um JSON com erro de sintaxe, esta ferramenta automaticamente solicita ao LLM
+#      que corrija seu próprio erro, aumentando a confiabilidade do serviço.
+#
+# O resultado é um sistema robusto que isola a tarefa de "limpeza de texto" da tarefa de
+# "extração de dados", facilitando a manutenção, a depuração e o aprimoramento dos prompts.
+#
+# =================================================================================================
+# =================================================================================================
+
 import calendar
 from langchain_core.runnables import Runnable, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
@@ -6,12 +43,14 @@ from app.core.llm import get_llm
 from app.prompts.filter_prompts import QUERY_ENHANCER_PROMPT, JSON_PARSER_PROMPT
 from datetime import datetime, timedelta
 
-def _create_chains():
-    """Função auxiliar para não repetir a criação das cadeias."""
-    llm = get_llm()
-    query_enhancer_chain = QUERY_ENHANCER_PROMPT | llm | StrOutputParser()
-
-    # --- LÓGICA DE CÁLCULO DE DATAS ---
+def _get_current_dates(data_passthrough):
+    """
+    Calcula todas as datas dinâmicas no momento da execução da cadeia.
+    Esta função será chamada para CADA requisição, garantindo que valores
+    como 'today', 'week_start', etc., estejam sempre atualizados.
+    O argumento `data_passthrough` recebe os dados que já estão no fluxo da cadeia,
+    mas não é utilizado aqui; está presente para compatibilidade com o `.assign()`.
+    """
     today = datetime.now()
     start_of_week = today - timedelta(days=today.weekday())
     end_of_week = start_of_week + timedelta(days=6)
@@ -25,32 +64,58 @@ def _create_chains():
         start_of_semester = today.replace(month=7, day=1)
         end_of_semester = today.replace(month=12, day=31)
 
-    prompt_with_dates = JSON_PARSER_PROMPT.partial(
-        today=today.strftime('%Y-%m-%d'),
-        yesterday=(today - timedelta(days=1)).strftime('%Y-%m-%d'),
-        last_week_start=(today - timedelta(days=7)).strftime('%Y-%m-%d'),
-        week_start=start_of_week.strftime('%Y-%m-%d'),
-        week_end=end_of_week.strftime('%Y-%m-%d'),
-        month_start=start_of_month.strftime('%Y-%m-%d'),
-        month_end=end_of_month.strftime('%Y-%m-%d'),
-        semester_start=start_of_semester.strftime('%Y-%m-%d'),
-        semester_end=end_of_semester.strftime('%Y-%m-%d')
-    )
+    # Retorna um dicionário com todas as datas formatadas como string.
+    # A LangChain irá mesclar este dicionário com os outros dados no fluxo.
+    return {
+        "today": today.strftime('%Y-%m-%d'),
+        "yesterday": (today - timedelta(days=1)).strftime('%Y-%m-%d'),
+        "last_week_start": (today - timedelta(days=7)).strftime('%Y-%m-%d'),
+        "week_start": start_of_week.strftime('%Y-%m-%d'),
+        "week_end": end_of_week.strftime('%Y-%m-%d'),
+        "month_start": start_of_month.strftime('%Y-%m-%d'),
+        "month_end": end_of_month.strftime('%Y-%m-%d'),
+        "semester_start": start_of_semester.strftime('%Y-%m-%d'),
+        "semester_end": end_of_semester.strftime('%Y-%m-%d')
+    }
+
+
+def _create_chains():
+    """
+    Função "fábrica" auxiliar para construir e configurar os componentes base das cadeias.
+    Esta função é chamada uma vez na inicialização para criar os objetos reutilizáveis.
+    """
+    llm = get_llm()
     
+    # --- Definição da Cadeia de Normalização (Enhancer) ---
+    query_enhancer_chain = QUERY_ENHANCER_PROMPT | llm | StrOutputParser()
+    
+    # --- Definição da Cadeia de Parsing com Auto-Correção ---
+    # Note que não usamos mais o .partial() aqui. O prompt permanece "puro",
+    # esperando receber todas as suas variáveis (datas e query) em tempo de execução.
     output_fixing_parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
-    json_parser_chain = prompt_with_dates | llm | output_fixing_parser
+    json_parser_chain = JSON_PARSER_PROMPT | llm | output_fixing_parser
     
     return query_enhancer_chain, json_parser_chain
+
 
 def create_master_chain() -> Runnable:
     """
     Cria a cadeia principal de PRODUÇÃO.
-    Retorna apenas o JSON final.
+    Esta cadeia orquestra o fluxo completo, injetando as datas atuais a cada
+    execução, passando pela normalização e pelo parsing, e retornando o JSON final.
     """
     query_enhancer_chain, json_parser_chain = _create_chains()
     
+    # A linha de montagem:
+    # 1. RunnablePassthrough.assign(dates=...): A cada execução, esta função
+    #    é chamada primeiro, calculando as datas atuais e adicionando-as ao fluxo de dados.
+    # 2. .assign(enhanced_query=...): O fluxo, que agora contém a query original e as datas,
+    #    é passado para o enhancer. O resultado é adicionado como 'enhanced_query'.
+    # 3. | json_parser_chain: O dicionário completo (com datas e enhanced_query) é passado
+    #    para a cadeia de parsing, que encontra e usa todas as variáveis que precisa.
     master_chain = (
-        RunnablePassthrough.assign(
+        RunnablePassthrough.assign(dates=_get_current_dates)
+        .assign(
             enhanced_query=query_enhancer_chain
         )
         | json_parser_chain
@@ -60,15 +125,60 @@ def create_master_chain() -> Runnable:
 def create_debug_chain() -> Runnable:
     """
     Cria a cadeia de DEBUG.
-    Retorna um dicionário com os passos intermediários.
+    Funciona de forma idêntica à master_chain, mas retorna os resultados de cada
+    passo intermediário para facilitar a depuração.
     """
     query_enhancer_chain, json_parser_chain = _create_chains()
 
+    # A linha de montagem de debug:
     debug_chain = (
-        RunnablePassthrough.assign(
+        RunnablePassthrough.assign(dates=_get_current_dates)
+        .assign(
             enhanced_query=query_enhancer_chain
         ).assign(
             parsed_json=json_parser_chain
         )
     )
     return debug_chain
+
+# =================================================================================================
+# Análise de Fluxo e Dados das Cadeias (Chains)
+# =================================================================================================
+#
+# 1. query_enhancer_chain
+# Propósito: Normalizar a pergunta do usuário de forma segura.
+# Fluxo Detalhado:
+#   1. Recebe a pergunta do usuário (ex: "notas rodando").
+#   2. Monta o QUERY_ENHANCER_PROMPT com a pergunta.
+#   3. Envia para o LLM, que traduz para os termos de negócio (ex: "notas em trânsito").
+#   4. O StrOutputParser garante que a saída seja uma string de texto limpa.
+# Exemplo de Entrada:
+#   { "query": "notas rodando ordenadas pelo mais caro", "dates": { ... } }
+# Exemplo de Saída:
+#   "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
+#
+# -------------------------------------------------------------------------------------------------
+#
+# 2. json_parser_chain
+# Propósito: Converter a pergunta normalizada em um objeto JSON estruturado.
+# Fluxo Detalhado:
+#   1. Recebe o dicionário completo com a pergunta normalizada e todas as datas.
+#   2. O JSON_PARSER_PROMPT usa as chaves do dicionário para preencher todas as suas
+#      variáveis (ex: {today}, {week_start}, {enhanced_query}).
+#   3. Envia para o LLM, que gera uma string JSON com base nas regras e exemplos.
+#   4. O OutputFixingParser garante uma saída JSON sintaticamente válida.
+# Exemplo de Entrada:
+#   { 
+#     "query": "...", 
+#     "dates": { "today": "2025-10-17", "week_start": "2025-10-13", ... },
+#     "enhanced_query": "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
+#   }
+# Exemplo de Saída (objeto Python):
+#   {
+#     "SituacaoNF": "TRÂNSITO",
+#     "SortColumn": "valor_nf",
+#     "SortDirection": "DESC",
+#     ... (outros campos nulos)
+#   }
+#
+# =================================================================================================

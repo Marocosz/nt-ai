@@ -1,7 +1,50 @@
+# =================================================================================================
+# =================================================================================================
+#
+#                    PROMPT ENGINEERING HUB - O CÉREBRO DA APLICAÇÃO
+#
+# -------------------------------------------------------------------------------------------------
+# Propósito do Arquivo:
+# -------------------------------------------------------------------------------------------------
+# Este arquivo é o centro de controle da inteligência artificial do sistema. Ele centraliza
+# todas as instruções (prompts) que definem as "personalidades" e "habilidades" de cada
+# componente de IA, garantindo que a lógica de interpretação seja clara, manutenível e
+# fácil de aprimorar.
+#
+# -------------------------------------------------------------------------------------------------
+# Arquitetura e Princípio de Design:
+# -------------------------------------------------------------------------------------------------
+# A arquitetura segue o princípio de "Separação de Responsabilidades", onde a tarefa
+# complexa de interpretar a linguagem natural é dividida em dois "especialistas" de IA
+# que operam em sequência, como uma linha de montagem:
+#
+# 1. O Tradutor (`QUERY_ENHANCER_PROMPT`):
+#    - Responsabilidade: Normalizar a pergunta do usuário de forma segura e previsível.
+#    - Ação: Recebe a pergunta bruta do usuário (ex: "notas rodando") e a traduz para os
+#      termos de negócio canônicos (ex: "notas em trânsito"), expandindo abreviações
+#      e corrigindo a formatação, sem nunca alterar a intenção original.
+#
+# 2. O Especialista em Extração (`JSON_PARSER_PROMPT`):
+#    - Responsabilidade: Converter a pergunta já normalizada em um objeto JSON estruturado.
+#    - Ação: Recebe a pergunta clara do Tradutor e, com base em um conjunto robusto de
+#      regras e exemplos, extrai todas as entidades (datas, status, locais, ordenação)
+#      e as mapeia para os campos do JSON que serão usados como filtros na procedure.
+#
+# Este design modular torna o sistema mais robusto, previsível e fácil de depurar,
+# pois cada etapa da interpretação pode ser testada e aprimorada de forma isolada.
+#
+# =================================================================================================
+# =================================================================================================
+
 from langchain_core.prompts import PromptTemplate
 from datetime import datetime, timedelta
 
-# --- 1. O Otimizador de Query ---
+# --- Bloco 1: O Tradutor de Termos de Negócio (QUERY_ENHANCER_PROMPT) ---
+
+# Define as instruções para o primeiro LLM da cadeia.
+# Sua única função é atuar como um "tradutor" seguro, limpando a pergunta do usuário
+# e substituindo sinônimos por termos de negócio oficiais, sem adicionar ou remover
+# qualquer informação ou intenção.
 enhancer_template = """
 Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é normalizar a pergunta do usuário de forma segura e previsível. Sua diretriz principal é **preservar 100% da intenção original do usuário.** Você nunca deve adicionar ou remover informações ou filtros. Responda APENAS com a frase reescrita.
 
@@ -56,7 +99,12 @@ Pergunta Reescrita:
 QUERY_ENHANCER_PROMPT = PromptTemplate.from_template(enhancer_template)
 
 
-# --- 2. O Parser de JSON ---
+# --- Bloco 2: O Especialista em Extração de JSON (JSON_PARSER_PROMPT) ---
+
+# Define as instruções para o segundo (e principal) LLM da cadeia.
+# Ele recebe a pergunta já normalizada e tem a responsabilidade de extrair todas as
+# entidades relevantes e formatá-las em um JSON estrito, que será usado como
+# entrada para a procedure do banco de dados.
 parser_template = """
 Você é um assistente especialista que analisa um texto claro e o converte para um objeto JSON de filtros. Sua resposta deve ser APENAS o objeto JSON, sem nenhum texto adicional.
 Sua tarefa principal é extrair TODOS os filtros mencionados. A ordenação é uma tarefa secundária. Não ignore um filtro para aplicar uma ordenação.
@@ -88,7 +136,7 @@ Mapeamento para "TipoData" (eventos com data):
 Mapeamento para "Operacao" (propósito do transporte):
 Valores possíveis: "InBound-IPO", "InBound-MAO", "InBound-UDI", "OutBound-BAR", "OutBound-BAR-MAT.PRIMA", "OutBound-IPO", "OutBound-MAO", "OutBound-RIO", "OutBound-SPO", "OutBound-UDI".
 
---- MAPEAMENTO CONTEXTUAL PARA "SituacaoNF" (estado logístico) ---  
+--- MAPEAMENTO CONTEXTUAL PARA "SituacaoNF" (estado logístico) --- 
 Use estas definições para entender a intenção do usuário sobre o estado atual da nota:
 - "ENTREGUE": A entrega foi concluída com sucesso. Sinônimos: "entregas finalizadas", "já chegaram", "concluídas".
 - "RETIDA": A entrega está parada por um problema externo, geralmente fiscal. Sinônimos: "retidas", "paradas na fiscalização", "bloqueadas".
