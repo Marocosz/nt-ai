@@ -118,6 +118,7 @@ def create_master_chain() -> Runnable:
         .assign(
             enhanced_query=query_enhancer_chain
         )
+        | (lambda x: {**x["dates"], "enhanced_query": x["enhanced_query"]})
         | json_parser_chain
     )
     return master_chain
@@ -129,15 +130,14 @@ def create_debug_chain() -> Runnable:
     passo intermediário para facilitar a depuração.
     """
     query_enhancer_chain, json_parser_chain = _create_chains()
-
+    debug_parser_input = (lambda x: {**x["dates"], "enhanced_query": x["enhanced_query"]})
+    
     # A linha de montagem de debug:
     debug_chain = (
         RunnablePassthrough.assign(dates=_get_current_dates)
         .assign(
             enhanced_query=query_enhancer_chain
-        ).assign(
-            parsed_json=json_parser_chain
-        )
+        ).assign(parsed_json=debug_parser_input | json_parser_chain)
     )
     return debug_chain
 

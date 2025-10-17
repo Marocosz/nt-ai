@@ -15,6 +15,11 @@
   - [`app/main.py`](#appmainpy)
   - [`app/chains/master_chain.py`](#appchainsmaster_chainpy)
   - [`app/prompts/filter_prompts.py`](#apppromptsfilter_promptspy)
+- [Outros Módulos e Ferramentas de Suporte](#outros-módulos-e-ferramentas-de-suporte)
+- [Endpoints](#endpoints)
+  - [**1. Endpoint de Produção**](#1-endpoint-de-produção)
+    - [**Endpoint:** `POST /parse-query`](#endpoint-post-parse-query)
+    - [**Endpoint:** `POST /debug-query`](#endpoint-post-debug-query)
 
 ---
 
@@ -175,3 +180,95 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
     - Utiliza uma extensa lista de exemplos (Few-Shot Learning) para ensinar à IA o comportamento esperado em cenários complexos, como filtros combinados com ordenação.
 
 
+# Outros Módulos e Ferramentas de Suporte
+
+> Além dos arquivos centrais que definem a lógica da IA, o projeto conta com outros módulos de suporte e ferramentas de desenvolvimento. Cada um desses arquivos possui sua própria documentação interna detalhada para explicar seu funcionamento.
+
+- `app/core/llm.py:` Este arquivo atua como uma "fábrica" que centraliza a criação e configuração do modelo de linguagem (ChatGroq). Isso facilita a manutenção e a troca do modelo em um único local.
+
+- `scripts/debug_runner.py:` Uma ferramenta de linha de comando para executar o roteiro de testes (ex: testes_completos.txt) de forma automatizada, exibindo os resultados de cada query diretamente no terminal. É essencial para a validação em lote.
+
+- `scripts/test_ui.py:` Lança uma interface web local com Streamlit, ideal para testes individuais, prototipação rápida de novas regras de prompt e demonstrações visuais do fluxo da IA.
+
+- `sql/:` Esta pasta organiza todo o código SQL relevante para o projeto, incluindo a procedure principal SP_TK_NOTAS_AI_HOM e os scripts usados para validação no banco de dados.
+
+- `tests_case/:` Armazena os arquivos .txt que contêm as frases em linguagem natural usadas como entrada para os testes de integração, servindo como a "fonte da verdade" para validar o comportamento da IA.
+
+
+# Endpoints
+
+> Esta seção detalha os endpoints que sua API expõe, o que é crucial para a equipe que irá consumir seu microsserviço.
+
+## **1. Endpoint de Produção**
+
+### **Endpoint:** `POST /parse-query`
+
+**Descrição:** Recebe uma query em linguagem natural e retorna apenas o objeto JSON final com os filtros extraídos. Este é o endpoint que deve ser consumido pela aplicação principal.
+  
+- **Request Body:**
+  ```json
+  {
+    "query": "notas entregues hoje para o cliente BEXX"
+  }
+- **Success Response (200 OK)**
+    ```
+    {
+    "NF":NULL
+    "DE":"2025-10-17"
+    "ATE":"2025-10-17"
+    "TipoData":"2"
+    "Cliente":"BEXX"
+    "Transportadora":NULL
+    "UFDestino":NULL
+    "CidadeDestino":NULL
+    "Operacao":NULL
+    "SituacaoNF":NULL
+    "StatusAnaliseData":NULL
+    "CNPJRaizTransp":NULL
+    "SortColumn":NULL
+    "SortDirection":NULL
+    }
+    ```
+### **Endpoint:** `POST /debug-query`
+
+**Descrição:** Endpoint para desenvolvimento e diagnóstico. Retorna um objeto JSON contendo os resultados de cada etapa da cadeia de IA.
+  
+- **Request Body:**
+  ```json
+  {
+    "query": "notas entregues hoje para o cliente BEXX"
+  }
+- **Success Response (200 OK)**
+    ```
+    {
+    "query": "notas entregues hoje para o cliente BEXX",
+    "dates": {
+        "today": "2025-10-17",
+        "yesterday": "2025-10-16",
+        "last_week_start": "2025-10-10",
+        "week_start": "2025-10-13",
+        "week_end": "2025-10-19",
+        "month_start": "2025-10-01",
+        "month_end": "2025-10-31",
+        "semester_start": "2025-07-01",
+        "semester_end": "2025-12-31"
+    },
+    "enhanced_query": "Quais notas fiscais foram entregues hoje para o cliente BEXX?",
+    "parsed_json": {
+        "NF": null,
+        "DE": "2025-10-17",
+        "ATE": "2025-10-17",
+        "TipoData": "2",
+        "Cliente": "BEXX",
+        "Transportadora": null,
+        "UFDestino": null,
+        "CidadeDestino": null,
+        "Operacao": null,
+        "SituacaoNF": null,
+        "StatusAnaliseData": null,
+        "CNPJRaizTransp": null,
+        "SortColumn": null,
+        "SortDirection": null
+    }
+    }
+    ```

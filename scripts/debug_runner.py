@@ -41,7 +41,7 @@
 #
 # Execute o script a partir do diretório raiz do projeto, passando o nome do arquivo de
 # teste como argumento. Exemplo:
-# > python scripts/debug_runner.py tests_case/testes_completos.txt
+# > python scripts/debug_runner.py testes.txt
 #
 # =================================================================================================
 # =================================================================================================
@@ -62,7 +62,7 @@ init(autoreset=True)
 # URL do endpoint de debug do microsserviço.
 MICROSERVICE_URL = "http://127.0.0.1:5001/debug-query"
 # Intervalo em segundos para pausar entre as requisições, para evitar rate limiting.
-DELAY_BETWEEN_REQUESTS = 1  # segundos
+DELAY_BETWEEN_REQUESTS = 10  # segundos
 
 def run_tests(queries):
     """
@@ -140,7 +140,7 @@ if __name__ == "__main__":
         
     test_file_name = sys.argv[1]
     # Constrói o caminho completo para o arquivo de teste, assumindo a nova estrutura de pastas.
-    test_file_path = f"tests/test_cases/{test_file_name}"
+    test_file_path = f"tests_cases/{test_file_name}"
     
     try:
         # Abre o arquivo de teste com codificação utf-8 para ler caracteres especiais.

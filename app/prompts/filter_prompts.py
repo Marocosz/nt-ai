@@ -51,6 +51,7 @@ Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é
 --- REGRAS DE OURO (NÃO QUEBRE NUNCA) ---
 1.  **PROIBIDO ADICIONAR CONCEITOS:** Se o usuário pediu por "entregues", a frase final SÓ PODE conter "entregues". Nunca adicione "emitidas" ou qualquer outro evento que não estava lá.
 2.  **PROIBIDO REMOVER CONCEITOS:** Se o usuário mencionou um status ("rodando") e uma ordenação ("mais caro"), a frase final DEVE conter AMBOS os conceitos traduzidos.
+3.  **NUNCA, NUNCA MESMO** ADICIONAR QUALQUER CONTEUDO QUE NÃO ESTEJA EXPLICITAMENTE PRESENTE NA PERGUNTA ORIGINAL.
 
 --- TAREFAS PERMITIDAS (SUAS ÚNICAS FUNÇÕES) ---
 1.  **EXPANDIR ABREVIAÇÕES:**
@@ -61,6 +62,11 @@ Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é
 
 2.  **MAPEAMENTO DE SINÔNIMOS PARA TERMOS DE NEGÓCIO:**
     - "com atraso" -> "com status de análise ATRASO"
+    - "prevista para amanhã" -> "com status de análise DIA SEGUINTE"
+    - "prevista para hoje" -> "com status de análise DO DIA"
+    - "prevista para amanhã" -> "com status de análise DIA SEGUINTE"
+    - "status entregue" -> "com situação logística ENTREGUE"
+    - "análise entregue" -> "com status de análise de performance ENTREGUE"
     - "rodando", "viajando", "a caminho" -> "em trânsito"
     - "paradas na fiscalização", "bloqueadas" -> "retidas"
     - "ordenar pelo mais caro", "ordenar pelo maior valor" -> "ordenadas pelo maior valor"
@@ -70,8 +76,15 @@ Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é
 
 4.  **PRESERVAR ESPECIFICIDADE GEOGRÁFICA:** Se o usuário especificar "cidade de", mantenha essa estrutura na frase reescrita.
 
+5.  **TERMOS TEMPORAIS OU DE PREVISÃO:** 
+    Se o usuário mencionar "previstas", "planejadas", "estimadas" ou termos similares,
+    NUNCA associe automaticamente a status de entrega ou análise. Apenas preserve o termo.
+    
+⚠️ IMPORTANTE: 
+Se não houver indicação explícita de status, situação ou tipo de evento, 
+NÃO INVENTE NENHUM. Apenas normalize a forma textual.
+
 --- EXEMPLOS QUE ILUSTRAM AS REGRAS ---
----
 Pergunta Original: "quais notas foram entregues hoje?"
 Pergunta Reescrita: "Quais notas fiscais foram entregues hoje?"
 (Explicação: Apenas expandiu "nf" para "nota fiscal". Não adicionou "emitidas".)
@@ -111,6 +124,9 @@ Sua tarefa principal é extrair TODOS os filtros mencionados. A ordenação é u
 
 A data de referência para cálculos é {today}.
 
+--- REGRA FUNDAMENTAL DE EVENTOS DE DATA (PRIORIDADE MÁXIMA) ---
+Se uma frase contém AMBOS um evento de data (como 'emitido', 'entregue', 'baixado') E um período de tempo (como 'hoje', 'nesta semana', 'em setembro'), sua tarefa mais importante é preencher AMBOS os campos: `TipoData` com o código do evento E `DE`/`ATE` com o período de tempo. Esta associação é obrigatória.
+
 Analise o texto do usuário e extraia as seguintes entidades:
 - "NF": O número da nota fiscal (inteiro).
 - "DE": A data de início do período no formato AAAA-MM-DD.
@@ -141,7 +157,6 @@ Use estas definições para entender a intenção do usuário sobre o estado atu
 - "ENTREGUE": A entrega foi concluída com sucesso. Sinônimos: "entregas finalizadas", "já chegaram", "concluídas".
 - "RETIDA": A entrega está parada por um problema externo, geralmente fiscal. Sinônimos: "retidas", "paradas na fiscalização", "bloqueadas".
 - "TRÂNSITO": A entrega está em movimento, a caminho do destino. Sinônimos: "em trânsito", "rodando", "viajando", "a caminho".
----
 
 --- O campo "StatusAnaliseData" DEVE conter EXATAMENTE um dos seguintes valores: "ATRASO", "DIA SEGUINTE", ... Não use sinônimos ou variações no valor final do JSON. ---
 Use estas definições para entender a intenção do usuário:
@@ -156,14 +171,35 @@ Use estas definições para entender a intenção do usuário:
 Mapeamento para "UFDestino" (estado):
 Valores possíveis: "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO".
 
---- REGRAS DE INTELIGÊNCIA ---
-Regras de Ambiguidade (TipoData vs. SituacaoNF):
-- Se uma palavra como "entregue", "emitido" ou "baixada" for usada JUNTO com um período de tempo (ex: "ontem", "hoje", "na semana passada", "em setembro"), priorize o preenchimento de "TipoData".
-- Se uma palavra que descreve um estado (ex: "em trânsito", "retida") for usada sem um período de tempo claro, priorize o preenchimento de "SituacaoNF".
-- Se um termo como "entregue" for usado sem um período de tempo, priorize o preenchimento de "SituacaoNF" com o valor 'ENTREGUE'.
-- **Regra Especial para 'Entregue':** A palavra 'entregue' pode significar duas coisas. Se usada com um período de tempo ('entregues ontem'), ela é um evento de data e preenche `TipoData`. Se usada como um estado ('status entregue'), ela descreve a situação logística atual e DEVE preencher `SituacaoNF`, não `StatusAnaliseData`.
+--- REGRAS DE DIFERENCIAÇÃO DE STATUS ---
+A seguir estão as três interpretações possíveis para um status. Você deve usar o contexto da frase para escolher a correta.
 
-Regras de Localização:
+1.  **Evento de Data (`TipoData`):** Responde "QUANDO algo aconteceu?". É acionado quando um evento (como 'entregue', 'emitido') está junto com um período de tempo (como 'hoje', 'ontem', 'nesta semana'). Neste caso, você DEVE preencher `TipoData` e `DE`/`ATE`.
+2.  **Estado Logístico (`SituacaoNF`):** Responde "ONDE está a nota AGORA?". É acionado por frases como "situação logística", "status atual", "em trânsito", "retida". Neste caso, você DEVE preencher `SituacaoNF`.
+3.  **Análise de Performance (`StatusAnaliseData`):** Responde "A nota está NO PRAZO?". É acionado por frases como "análise de performance", "status de análise", "com atraso", "previsto para hoje". Neste caso, você DEVE preencher `StatusAnaliseData`.
+
+--- REGRAS DE LÓGICA E PRIORIDADE (LEIA COM ATENÇÃO) ---
+
+1.  **REGRA MESTRE DE EVENTOS DE DATA (PRIORIDADE MÁXIMA):**
+    - Se uma frase contém AMBOS um **evento de data** (palavras como 'emitido', 'entregue', 'baixado', 'previsto', 'agendado', 'previsão real') E um **período de tempo** (palavras como 'hoje', 'ontem', 'nesta semana', 'em setembro', 'entre X e Y'), sua tarefa mais importante é preencher AMBOS os campos: `TipoData` com o código do evento E `DE`/`ATE` com o período de tempo.
+    - Esta regra se sobrepõe a todas as outras. Por exemplo, a frase "notas com data de agenda para hoje" DEVE resultar em `TipoData: '1'`, e **NÃO** em `StatusAnaliseData: 'DO DIA'`. A frase "notas previstas entre 1 e 15 de setembro" DEVE resultar em `TipoData: '4'`, e não em qualquer outro status.
+
+2.  **REGRA DE ANÁLISE DE PERFORMANCE (SEGUNDA PRIORIDADE):**
+    - Use o campo `StatusAnaliseData` APENAS quando a intenção for claramente sobre a performance em relação ao prazo, usando frases como "com atraso", "status DO DIA", "previsto para amanhã".
+    - Se uma frase se encaixar na REGRA MESTRE acima, a REGRA MESTRE vence.
+
+3.  **REGRA DE ESTADO LOGÍSTICO (TERCEIRA PRIORIDADE):**
+    - Use o campo `SituacaoNF` quando a intenção for sobre o estado físico atual da nota, usando frases como "em trânsito", "retida" ou "status entregue" (sem data).
+
+4.  **REGRA DE AMBIGUIDADE 'ENTREGUE':**
+    - 'entregues ontem' -> É um Evento de Data (`TipoData: '2'`).
+    - 'status entregue' -> É um Estado Logístico (`SituacaoNF: 'ENTREGUE'`).
+    - 'análise de performance entregue' -> É uma Análise de Performance (`StatusAnaliseData: 'ENTREGUE'`).
+
+5.  **REGRA DE INFERÊNCIA GEOGRÁFICA (EXCEÇÃO):**
+    - Você NÃO deve inferir filtros, EXCETO para a geografia. Se você extrair uma `CidadeDestino` que seja uma capital ou cidade principal conhecida (ex: 'Manaus', 'São Paulo'), você DEVE também preencher o `UFDestino` correspondente (`AM`, `SP`).
+
+--- Regras de Localização ---
 - Se o usuário mencionar uma sigla de 2 letras da lista de "UFDestino", preencha o campo "UFDestino".
 - Se um nome pode ser tanto cidade quanto estado (ex: "São Paulo"), priorize o preenchimento de "UFDestino" com a sigla correspondente (ex: "SP"), a menos que o usuário especifique "cidade de".
 - Extraia o nome da cidade para "CidadeDestino" sempre que possível.
@@ -173,7 +209,7 @@ Regras de Localização:
 2. Prioridade de Filtro: Se um `StatusAnaliseData` como 'DO DIA' ou 'DIA SEGUINTE' for identificado, priorize este filtro e NÃO extraia um `TipoData` ao mesmo tempo.
 3. Restrição de Inferência: NÃO infira filtros que não foram explicitamente mencionados. Se a pergunta for vaga, todos os filtros devem ser null.
 4. Regra para Códigos: Valores para "Operacao" (como "OutBound-SPO") são códigos únicos e NÃO DEVEM ser divididos ou interpretados. Extraia o valor exato.
-5. Associação de Data e Tipo: Se um filtro de data (`DE`/`ATE`) for preenchido com base em um evento (como 'entregue' ou 'emitido'), o `TipoData` correspondente DEVE ser preenchido.
+5. **REGRA MESTRE DE ASSOCIAÇÃO (EVENTO + DATA):** Quando uma pergunta contém um **evento de data** (como 'emitido', 'entregue', 'baixado') E um **período de tempo** (como 'hoje', 'nesta semana', 'em setembro'), sua principal tarefa é preencher ambos `DE`/`ATE` E o `TipoData` correspondente. Esta associação é obrigatória e tem alta prioridade.
 6. Se o texto contiver uma faixa explícita ("de X até Y"), sempre converta para formato completo ISO (AAAA-MM-DD).
 7. Se contiver "última semana" ou "semana passada", defina "DE" = {last_week_start} e "ATE" = {today}.
 8. Se contiver "esta semana" ou "dessa semana", defina "DE" = {week_start} e "ATE" = {week_end}.
@@ -234,6 +270,9 @@ JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, 
 Texto: "me mostre as notas com status DO DIA"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DO DIA", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
+Texto: "Me mostre as notas com status de análise de performance ENTREGUE"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "ENTREGUE", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
 Texto: "liste as notas emitidas hoje para SP que estão em trânsito"
 JSON: {{"NF": null, "DE": "{today}", "ATE": "{today}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": "SP", "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
@@ -246,6 +285,9 @@ JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, 
 Texto: "Liste as notas da transportadora Expresso Veloz para a cidade de Salvador que foram emitidas ontem"
 JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "3", "Cliente": null, "Transportadora": "Expresso Veloz", "UFDestino": "BA", "CidadeDestino": "Salvador", "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
+Texto: "Quais notas fiscais foram emitidas nesta semana?"
+JSON: {{"NF": null, "DE": "{week_start}", "ATE": "{week_end}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
 Texto: "qual o status da entrega?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
@@ -254,6 +296,9 @@ JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, 
 ---
 Texto: "notas emitidas ontem e entregues hoje"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "ENTREGUE", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Texto: "Quais notas têm entrega prevista para amanhã?"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DIA SEGUINTE", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 
 Agora, analise o seguinte texto:
