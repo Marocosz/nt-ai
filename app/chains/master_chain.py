@@ -64,12 +64,21 @@ def _get_current_dates(data_passthrough):
         start_of_semester = today.replace(month=7, day=1)
         end_of_semester = today.replace(month=12, day=31)
 
+    # `start_of_week` é esta segunda-feira.
+    # Subtrai 1 dia para obter o domingo passado (fim da última semana).
+    end_of_last_week = start_of_week - timedelta(days=1)
+    # Subtrai 6 dias do domingo passado para obter a segunda-feira passada (início da última semana).
+    start_of_last_week = end_of_last_week - timedelta(days=6)
+
     # Retorna um dicionário com todas as datas formatadas como string.
-    # A LangChain irá mesclar este dicionário com os outros dados no fluxo.
     return {
         "today": today.strftime('%Y-%m-%d'),
         "yesterday": (today - timedelta(days=1)).strftime('%Y-%m-%d'),
-        "last_week_start": (today - timedelta(days=7)).strftime('%Y-%m-%d'),
+        
+        # "last_week_start" agora se refere ao início da semana de calendário passada.
+        "last_week_start": start_of_last_week.strftime('%Y-%m-%d'),
+        "last_week_end": end_of_last_week.strftime('%Y-%m-%d'),
+
         "week_start": start_of_week.strftime('%Y-%m-%d'),
         "week_end": end_of_week.strftime('%Y-%m-%d'),
         "month_start": start_of_month.strftime('%Y-%m-%d'),
@@ -111,8 +120,10 @@ def create_master_chain() -> Runnable:
     #    é chamada primeiro, calculando as datas atuais e adicionando-as ao fluxo de dados.
     # 2. .assign(enhanced_query=...): O fluxo, que agora contém a query original e as datas,
     #    é passado para o enhancer. O resultado é adicionado como 'enhanced_query'.
-    # 3. | json_parser_chain: O dicionário completo (com datas e enhanced_query) é passado
-    #    para a cadeia de parsing, que encontra e usa todas as variáveis que precisa.
+    # 3. | (lambda...): A função lambda "achata" o dicionário, colocando as chaves de
+    #    'dates' e 'enhanced_query' no mesmo nível para o parser.
+    # 4. | json_parser_chain: O dicionário completo é passado para a cadeia de parsing,
+    #    que encontra e usa todas as variáveis que precisa.
     master_chain = (
         RunnablePassthrough.assign(dates=_get_current_dates)
         .assign(
@@ -130,6 +141,8 @@ def create_debug_chain() -> Runnable:
     passo intermediário para facilitar a depuração.
     """
     query_enhancer_chain, json_parser_chain = _create_chains()
+    
+    # Prepara o passo de transformação de dados para o parser
     debug_parser_input = (lambda x: {**x["dates"], "enhanced_query": x["enhanced_query"]})
     
     # A linha de montagem de debug:
@@ -169,8 +182,7 @@ def create_debug_chain() -> Runnable:
 #   4. O OutputFixingParser garante uma saída JSON sintaticamente válida.
 # Exemplo de Entrada:
 #   { 
-#     "query": "...", 
-#     "dates": { "today": "2025-10-17", "week_start": "2025-10-13", ... },
+#     "today": "2025-10-20", "last_week_start": "2025-10-13", "last_week_end": "2025-10-19", ...
 #     "enhanced_query": "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
 #   }
 # Exemplo de Saída (objeto Python):

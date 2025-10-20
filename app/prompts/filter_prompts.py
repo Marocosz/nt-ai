@@ -83,7 +83,7 @@ Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é
     
 ⚠️ IMPORTANTE: 
 Se não houver indicação explícita de status, situação ou tipo de evento, 
-NÃO INVENTE NENHUM. Apenas normalize a forma textual.
+NÃO INVENTE NENHUM. Apenas normalize a forma textual. NÃO ADICIONE NENHUM DADO DE REGRA DE NEGÓCIO NA FRASE CASO ELA NÃO TENHA SIDO PASSADO PELA ORIGINAL!
 
 --- EXEMPLOS QUE ILUSTRAM AS REGRAS ---
 ---
@@ -186,25 +186,29 @@ A seguir estão as três interpretações possíveis para um status. Você deve 
 
 --- REGRAS DE LÓGICA E PRIORIDADE (LEIA COM ATENÇÃO) ---
 
-1.  **REGRA MESTRE DE EVENTOS DE DATA (PRIORIDADE MÁXIMA):**
-    - Se uma frase contém AMBOS um **evento de data** (palavras como 'emitido', 'entregue', 'baixado', 'previsto', 'agendado', 'previsão real') E um **período de tempo** (palavras como 'hoje', 'ontem', 'nesta semana', 'em setembro', 'entre X e Y'), sua tarefa mais importante é preencher AMBOS os campos: `TipoData` com o código do evento E `DE`/`ATE` com o período de tempo.
-    - Esta regra se sobrepõe a todas as outras. Por exemplo, a frase "notas com data de agenda para hoje" DEVE resultar em `TipoData: '1'`, e **NÃO** em `StatusAnaliseData: 'DO DIA'`. A frase "notas previstas entre 1 e 15 de setembro" DEVE resultar em `TipoData: '4'`, e não em qualquer outro status.
+1.  **REGRA DE PRECEDÊNCIA DE PERFORMANCE (PRIORIDADE MÁXIMA):**
+    - Frases que indicam performance de prazo são as mais específicas. Se você identificar uma destas frases, ela TEM PRIORIDADE sobre um evento de data genérico (como "previsto").
+    - **Frases de Performance:** "previsto para amanhã", "prevista para hoje", "para o dia seguinte", "para daqui a 2 dias", "status DO DIA", "com atraso".
+    - **Ação:** Você DEVE preencher **APENAS `StatusAnaliseData`**. Você **NÃO DEVE** preencher `TipoData` nestes casos.
+    - *Esta regra corrige os Testes #17 e #22.*
 
-2.  **REGRA DE ANÁLISE DE PERFORMANCE (SEGUNDA PRIORIDADE):**
-    - Use o campo `StatusAnaliseData` APENAS quando a intenção for claramente sobre a performance em relação ao prazo, usando frases como "com atraso", "status DO DIA", "previsto para amanhã".
-    - Se uma frase se encaixar na REGRA MESTRE acima, a REGRA MESTRE vence.
+2.  **REGRA DE EVENTO DE DATA (SEGUNDA PRIORIDADE):**
+    - Use esta regra se a REGRA 1 não se aplicar.
+    - Se uma frase contém AMBOS um **evento de data** (palavras como 'emitido', 'entregue', 'baixado', 'previsto', 'agendado', 'previsão real') E um **período de tempo** (palavras como 'hoje', 'ontem', 'nesta semana', 'em setembro'), sua tarefa é preencher AMBOS os campos: `TipoData` com o código do evento E `DE`/`ATE` com o período de tempo.
+    - *Esta regra corrige o Teste #11, garantindo que "emitidas nesta semana" preencha `TipoData: "3"`.*
 
 3.  **REGRA DE ESTADO LOGÍSTICO (TERCEIRA PRIORIDADE):**
-    - Use o campo `SituacaoNF` quando a intenção for sobre o estado físico atual da nota, usando frases como "em trânsito", "retida" ou "status entregue" (sem data).
+    - Use `SituacaoNF` para o estado físico (ex: "em trânsito", "retida", "situação logística entregue") quando não houver um evento de data explícito.
 
 4.  **REGRA DE AMBIGUIDADE 'ENTREGUE':**
-    - 'entregues ontem' -> É um Evento de Data (`TipoData: '2'`).
-    - 'status entregue' -> É um Estado Logístico (`SituacaoNF: 'ENTREGUE'`).
-    - 'análise de performance entregue' -> É uma Análise de Performance (`StatusAnaliseData: 'ENTREGUE'`).
+    - 'entregues ontem' -> Segue a REGRA 2 (`TipoData: '2'`).
+    - 'status entregue' (via Enhancer: "situação logística ENTREGUE") -> Segue a REGRA 3 (`SituacaoNF: 'ENTREGUE'`).
+    - 'análise de performance entregue' -> Segue a REGRA 1 (`StatusAnaliseData: 'ENTREGUE'`).
 
-5.  **REGRA DE INFERÊNCIA GEOGRÁFICA (EXCEÇÃO):**
-    - Você NÃO deve inferir filtros, EXCETO para a geografia. Se você extrair uma `CidadeDestino` que seja uma capital ou cidade principal conhecida (ex: 'Manaus', 'São Paulo'), você DEVE também preencher o `UFDestino` correspondente (`AM`, `SP`).
-
+5.  **REGRA DE LOCALIZAÇÃO (SEM INFERÊNCIA):**
+    - Você NÃO DEVE inferir o `UFDestino` a partir da `CidadeDestino` (ex: 'Manaus' -> `CidadeDestino: "Manaus"`, `UFDestino: null`), a menos que o nome seja ambíguo (ex: 'São Paulo' -> `UFDestino: "SP"` E `CidadeDestino: "São Paulo"` se a frase for "cidade de São Paulo").
+    - *Esta regra formaliza o comportamento que você confirmou ser o correto.*
+    
 --- Regras de Localização ---
 - Se o usuário mencionar uma sigla de 2 letras da lista de "UFDestino", preencha o campo "UFDestino".
 - Se um nome pode ser tanto cidade quanto estado (ex: "São Paulo"), priorize o preenchimento de "UFDestino" com a sigla correspondente (ex: "SP"), a menos que o usuário especifique "cidade de".
@@ -217,7 +221,7 @@ A seguir estão as três interpretações possíveis para um status. Você deve 
 4. Regra para Códigos: Valores para "Operacao" (como "OutBound-SPO") são códigos únicos e NÃO DEVEM ser divididos ou interpretados. Extraia o valor exato.
 5. **REGRA MESTRE DE ASSOCIAÇÃO (EVENTO + DATA):** Quando uma pergunta contém um **evento de data** (como 'emitido', 'entregue', 'baixado') E um **período de tempo** (como 'hoje', 'nesta semana', 'em setembro'), sua principal tarefa é preencher ambos `DE`/`ATE` E o `TipoData` correspondente. Esta associação é obrigatória e tem alta prioridade.
 6. Se o texto contiver uma faixa explícita ("de X até Y"), sempre converta para formato completo ISO (AAAA-MM-DD).
-7. Se contiver "última semana" ou "semana passada", defina "DE" = {last_week_start} e "ATE" = {today}.
+7. Se contiver "última semana" ou "semana passada", defina "DE" = {last_week_start} e "ATE" = {last_week_end}.
 8. Se contiver "esta semana" ou "dessa semana", defina "DE" = {week_start} e "ATE" = {week_end}.
 9. Se contiver "este mês" ou "deste mês", defina "DE" = {month_start} e "ATE" = {month_end}.
 10. Se contiver "este semestre" ou "neste semestre", defina "DE" = {semester_start} e "ATE" = {semester_end}.
@@ -239,6 +243,7 @@ Regras Gerais:
 - Se uma entidade não for encontrada, seu valor no JSON deve ser null.
 - Datas relativas: 'ontem' é {yesterday}, 'hoje' é {today}. Períodos como 'semana passada' ou 'dessa semana' são definidos nas regras de precisão.
 - Se a busca for por um número de NF, todos os outros campos devem ser null.
+- Se a pergunta não estiver dentro do contexto da nossa aplicação (notas fiscais e logística), todos os campos devem ser null.
 
 --- REGRAS DE CONSISTÊNCIA E PRIORIDADE (LÓGICA FINAL) ---
 

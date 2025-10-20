@@ -1,0 +1,46 @@
+# ====================================================================================
+# ROTEIRO DE TESTES FOCADO - BUGS E CASOS EXTREMOS
+#
+# Propósito: Validar especificamente as correções de lógica para os
+# bugs de prioridade, associação e fallback.
+# ====================================================================================
+
+# --- Teste de Bug 1: Conflito de Prioridade (Evento de Data vs. Análise de Performance) ---
+# A IA estava priorizando "hoje" (StatusAnaliseData) em vez de "agenda" (TipoData).
+# Resultado Correto: Deve preencher TipoData: "1".
+notas com data de agenda para hoje
+
+# --- Teste de Bug 2: Conflito de Prioridade (Evento de Data vs. Análise de Performance) ---
+# A IA estava se confundindo com "previstas".
+# Resultado Correto: Deve preencher TipoData: "4".
+notas previstas entre 1 e 15 de setembro de 2025
+
+# --- Teste de Bug 3: Associação de Evento + Calendário ---
+# A IA estava "esquecendo" de preencher o TipoData ao usar uma regra de calendário.
+# Resultado Correto: Deve preencher TipoData: "3" E as datas da semana atual.
+notas emitidas nesta semana
+
+# --- Teste de Bug 4: Conflito de Prioridade (Performance vs. Evento) ---
+# A IA estava preenchendo TipoData ou SituacaoNF em vez de StatusAnaliseData.
+# Resultado Correto: Deve preencher APENAS StatusAnaliseData: "DIA SEGUINTE".
+quais notas têm entrega prevista para amanhã?
+
+# --- Teste de Bug 5: Conflito de Prioridade (Performance vs. Evento) ---
+# Mesmo caso do bug 4, com outra frase.
+# Resultado Correto: Deve preencher APENAS StatusAnaliseData: "DIA SEGUINTE".
+notas com entrega prevista para o dia seguinte
+
+# --- Teste de Bug 6: Conflito de Prioridade (Performance vs. Evento) ---
+# Mesmo caso do bug 4, com outra frase.
+# Resultado Correto: Deve preencher APENAS StatusAnaliseData: "PREVISTO PARA 2 DIAS".
+quais notas estão previstas para daqui a 2 dias?
+
+# --- Teste de Bug 7: Fallback de Relevância ---
+# A IA estava preenchendo StatusAnaliseData: "DO DIA" em vez de um JSON nulo.
+# Resultado Correto: Deve retornar um JSON com TODOS os campos nulos.
+qual o clima para hoje?
+
+# --- Teste de Bug 8: Fallback de Filtro Vago ---
+# A IA deve retornar um JSON nulo se nenhum filtro específico for dado.
+# Resultado Correto: Deve retornar um JSON com TODOS os campos nulos.
+me mostre as notas
