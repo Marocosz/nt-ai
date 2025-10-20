@@ -36,7 +36,7 @@
 # =================================================================================================
 
 import calendar
-import re # <-- Importação adicionada
+import re 
 from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda # <-- RunnableLambda adicionado
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain.output_parsers import OutputFixingParser

@@ -30,8 +30,8 @@
 #      tentará a *mesma query* novamente.
 #
 # 5. Controle de Taxa Preventivo:
-#    - Após uma query ser BEM-SUCEDIDA, o script pausa por `DELAY_BETWEEN_REQUESTS` (ex: 10 segundos)
-#    - antes de iniciar a próxima, como uma medida "amigável" para evitar o rate limiting.
+#    - Roda em lotes de 10. Após cada lote, faz uma pausa longa de 5 minutos
+#    - para evitar o banimento da API por "uso abusivo".
 #
 # Como Usar:
 # > python scripts/debug_runner.py testes_finais_cobertura_total.txt
@@ -59,8 +59,12 @@ MICROSERVICE_URL = "http://127.0.0.1:5001/debug-query"
 DELAY_BETWEEN_REQUESTS = 5 # segundos
 
 # Delay "de penalidade" quando um erro (timeout, rate limit) ocorre, para AGUARDAR o reset da API.
-# Ajuste este valor se a API exigir uma espera mais longa (ex: 300 para 5 minutos).
 RETRY_DELAY = 60 # 60 segundos
+
+# Configurações para o "throttling em lote" para evitar banimento
+REQUESTS_PER_BATCH = 10  # Número de testes a rodar antes de uma pausa longa
+LONG_PAUSE_MINUTES = 5   # Duração da pausa longa em minutos
+
 
 def run_tests(queries):
     """
@@ -70,6 +74,7 @@ def run_tests(queries):
     """
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================")
     print(f"{Style.BRIGHT}{Fore.MAGENTA} INICIANDO ROTEIRO DE TESTES - New Tracking Intent AI")
+    print(f"{Style.BRIGHT}{Fore.MAGENTA} (Modo de Lote: {REQUESTS_PER_BATCH} testes, depois pausa de {LONG_PAUSE_MINUTES} min)")
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================\n")
 
     total_queries = len(queries)
@@ -84,32 +89,20 @@ def run_tests(queries):
         success = False
         while not success:
             try:
-                # ==================================================================
-                # --- INÍCIO DA ALTERAÇÃO (TIMER) ---
-                # ==================================================================
                 # Captura o tempo exato de início da tentativa
                 start_time_epoch = time.time()
                 start_time_str = datetime.datetime.now().strftime('%H:%M:%S')
                 print(f"{Style.DIM}{Fore.WHITE}Iniciando requisição às {start_time_str}...{Style.RESET_ALL}")
-                # ==================================================================
-                # --- FIM DA ALTERAÇÃO ---
-                # ==================================================================
 
                 # Faz a chamada POST para o endpoint de debug, com um timeout de 120 segundos.
                 response = requests.post(MICROSERVICE_URL, json=payload, timeout=120)
 
                 # Verifica se a chamada foi bem-sucedida (status code 200 OK).
                 if response.status_code == 200:
-                    # ==================================================================
-                    # --- INÍCIO DA ALTERAÇÃO (TIMER) ---
-                    # ==================================================================
                     # Captura o tempo exato de fim e calcula a duração
                     end_time_epoch = time.time()
                     end_time_str = datetime.datetime.now().strftime('%H:%M:%S')
                     duration = end_time_epoch - start_time_epoch
-                    # ==================================================================
-                    # --- FIM DA ALTERAÇÃO ---
-                    # ==================================================================
 
                     # Extrai os dados da resposta JSON.
                     result_data = response.json()
@@ -122,16 +115,10 @@ def run_tests(queries):
                     print(f"{Style.NORMAL}{Fore.YELLOW}{enhanced_query}\n")
                     
                     print(f"{Fore.GREEN}2. JSON de Filtros Gerado:")
-                    print(f"{Style.NORMAL}{Fore.GREEN}{json.dumps(parsed_json, indent=2, ensure_ascii=False)}\n") # Adicionado \n
+                    print(f"{Style.NORMAL}{Fore.GREEN}{json.dumps(parsed_json, indent=2, ensure_ascii=False)}\n")
                     
-                    # ==================================================================
-                    # --- INÍCIO DA ALTERAÇÃO (TIMER) ---
-                    # ==================================================================
                     # Exibe o log de performance da requisição
                     print(f"{Style.BRIGHT}{Fore.BLUE}Tempo de Resposta: {duration:.2f} segundos (Início: {start_time_str} | Fim: {end_time_str}){Style.RESET_ALL}")
-                    # ==================================================================
-                    # --- FIM DA ALTERAÇÃO ---
-                    # ==================================================================
                     
                     # SINALIZA SUCESSO: Quebra o loop 'while' e passa para a próxima query.
                     success = True
@@ -166,6 +153,18 @@ def run_tests(queries):
         if i < total_queries - 1:
             print(f"{Style.BRIGHT}{Fore.MAGENTA}Aguardando {DELAY_BETWEEN_REQUESTS} segundos antes do próximo teste...{Style.RESET_ALL}")
             time.sleep(DELAY_BETWEEN_REQUESTS)
+
+            # O índice 'i' começa em 0. Então o teste #10 é i=9.
+            # (i + 1) é o número do teste.
+            # Se o número do teste for um múltiplo do tamanho do lote...
+            if (i + 1) % REQUESTS_PER_BATCH == 0:
+                long_pause_seconds = LONG_PAUSE_MINUTES * 60
+                print(f"{Style.BRIGHT}{Fore.RED}==================================================================")
+                print(f"{Style.BRIGHT}{Fore.RED} LOTE DE {REQUESTS_PER_BATCH} TESTES CONCLUÍDO.")
+                print(f"{Style.BRIGHT}{Fore.RED} INICIANDO PAUSA LONGA DE {LONG_PAUSE_MINUTES} MINUTOS PARA EVITAR BANIMENTO...")
+                print(f"{Style.BRIGHT}{Fore.RED} Próximo teste (TESTE #{i+2}) rodará aproximadamente às {datetime.datetime.now() + datetime.timedelta(seconds=long_pause_seconds)}")
+                print(f"{Style.BRIGHT}{Fore.RED}==================================================================\n")
+                time.sleep(long_pause_seconds)
 
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================")
     print(f"{Style.BRIGHT}{Fore.MAGENTA}        ROTEIRO DE TESTES FINALIZADO")
