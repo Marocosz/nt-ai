@@ -1,7 +1,7 @@
 # =================================================================================================
 # =================================================================================================
 #
-#                    PROMPT ENGINEERING HUB - O CÉREBRO DA APLICAÇÃO
+#                       PROMPT ENGINEERING HUB - O CÉREBRO DA APLICAÇÃO
 #
 # -------------------------------------------------------------------------------------------------
 # Propósito do Arquivo:
@@ -51,7 +51,7 @@ Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é
 --- REGRAS DE OURO (NÃO QUEBRE NUNCA) ---
 1.  **PROIBIDO ADICIONAR CONCEITOS:** Se o usuário pediu por "entregues", a frase final SÓ PODE conter "entregues". Nunca adicione "emitidas" ou qualquer outro evento que não estava lá.
 2.  **PROIBIDO REMOVER CONCEITOS:** Se o usuário mencionou um status ("rodando") e uma ordenação ("mais caro"), a frase final DEVE conter AMBOS os conceitos traduzidos.
-3.  **NUNCA, NUNCA MESMO** ADICIONAR QUALQUER CONTEUDO QUE NÃO ESTEJA EXPLICITAMENTE PRESENTE NA PERGUNTA ORIGINAL.
+3.  **REGRA MESTRE DE PRESERVAÇÃO DE EVENTOS:** As palavras "agenda", "entregue", "emitido", "previsto", "previsão real" e "baixada" são **TERMOS DE EVENTO DE DATA PROTEGIDOS**. Você DEVE mantê-las na frase reescrita exatamente como elas apareceram. **NUNCA** as traduza para um "status de análise" (como "DO DIA" ou "DIA SEGUINTE").
 
 --- TAREFAS PERMITIDAS (SUAS ÚNICAS FUNÇÕES) ---
 1.  **EXPANDIR ABREVIAÇÕES:**
@@ -59,6 +59,7 @@ Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é
     - "sp" -> "para o estado de São Paulo"
     - "cli" -> "do cliente"
     - "transp" -> "da transportadora"
+    - "ult sem" -> "última semana"
 
 2.  **MAPEAMENTO DE SINÔNIMOS PARA TERMOS DE NEGÓCIO:**
     - "com atraso" -> "com status de análise ATRASO"
@@ -77,8 +78,7 @@ Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é
 
 4.  **PRESERVAR ESPECIFICIDADE GEOGRÁFICA:** Se o usuário especificar "cidade de", mantenha essa estrutura na frase reescrita.
 
-5.  **TERMOS TEMPORAIS OU DE PREVISÃO:** 
-    Se o usuário mencionar "previstas", "planejadas", "estimadas" ou termos similares,
+5.  **TERMOS TEMPORAIS OU DE PREVISÃO:** Se o usuário mencionar "previstas", "planejadas", "estimadas" ou termos similares,
     NUNCA associe automaticamente a status de entrega ou análise. Apenas preserve o termo.
     
 ⚠️ IMPORTANTE: 
@@ -86,6 +86,7 @@ Se não houver indicação explícita de status, situação ou tipo de evento,
 NÃO INVENTE NENHUM. Apenas normalize a forma textual.
 
 --- EXEMPLOS QUE ILUSTRAM AS REGRAS ---
+---
 Pergunta Original: "quais notas foram entregues hoje?"
 Pergunta Reescrita: "Quais notas fiscais foram entregues hoje?"
 (Explicação: Apenas expandiu "nf" para "nota fiscal". Não adicionou "emitidas".)
@@ -105,6 +106,10 @@ Pergunta Reescrita: "O que foi baixado na última semana"
 Pergunta Original: "notas para a cidade de São Paulo"
 Pergunta Reescrita: "Me mostre as notas fiscais para a cidade de São Paulo"
 (Explicação: A especificação "cidade de" foi preservada para não generalizar para o estado.)
+---
+Pergunta Original: "notas com data de agenda para hoje"
+Pergunta Reescrita: "Notas com data de agenda para hoje"
+(Explicação: 'agenda' e 'hoje' são preservados para o Parser, conforme a Regra Mestre de Preservação de Eventos.)
 ---
 
 Pergunta Original: {query}
@@ -235,23 +240,41 @@ Regras Gerais:
 - Datas relativas: 'ontem' é {yesterday}, 'hoje' é {today}. Períodos como 'semana passada' ou 'dessa semana' são definidos nas regras de precisão.
 - Se a busca for por um número de NF, todos os outros campos devem ser null.
 
---- REGRAS DE CONSISTÊNCIA FINAL DO JSON ---
-1. Se "NF" for preenchido, todos os outros campos devem ser null.
-2. Se "TipoData" estiver presente, "StatusAnaliseData" deve ser null, salvo se o texto mencionar explicitamente dois contextos.
-3. Se "StatusAnaliseData" for identificado, "SituacaoNF" deve ser null.
-4. Se "SortColumn" for null, "SortDirection" também deve ser null.
+--- REGRAS DE CONSISTÊNCIA E PRIORIDADE (LÓGICA FINAL) ---
 
---- REGRAS DE PRIORIDADE HIERÁRQUICA ---
-1. Tempo explícito (ex: "ontem", "hoje", "semana passada") tem prioridade máxima — ele define "DE" e "ATE".
-2. Eventos de data ("emitido", "entregue", "baixada") têm prioridade média — preenchem "TipoData".
-3. Status logístico ("TRÂNSITO", "RETIDA", "ENTREGUE") têm prioridade abaixo dos eventos.
-4. Status de análise ("DO DIA", "ATRASO") têm prioridade sobre status logístico, mas nunca coexistem.
+1.  **`NF` (PRIORIDADE ABSOLUTA):**
+    - Se um número de "NF" for identificado, todos os outros campos de filtro (DE, ATE, Cliente, etc.) DEVEM ser `null`.
+    - (Vindo da antiga regra de Consistência #1)
 
+2.  **`TEMPO EXPLÍCITO` (ALTA PRIORIDADE):**
+    - O tempo explícito (ex: "ontem", "hoje", "nesta semana", "em setembro") tem prioridade máxima para definir os campos `DE` e `ATE`.
+    - (Vindo da antiga regra de Hierarquia #1)
+
+3.  **`EVENTOS DE DATA` (`TipoData`):**
+    - Palavras de evento (ex: 'emitido', 'entregue', 'baixado', 'previsto') são usadas para preencher o campo `TipoData`.
+    - A `REGRA MESTRE DE EVENTOS DE DATA` (definida acima no prompt) tem prioridade sobre outras interpretações de status.
+    - (Vindo da antiga regra de Hierarquia #2, combinada com a nova Regra Mestre)
+
+4.  **`TipoData` vs. `StatusAnaliseData` (QUASE SEMPRE EXCLUSIVOS):**
+    - Estes dois campos geralmente não coexistem, pois "evento de data" e "análise de performance" são conceitos diferentes.
+    - **Exceção (Permitida):** O usuário PODE pedir por um evento de data E um status de performance (ex: "notas baixadas na semana passada e que estão com atraso"). Neste caso, ambos DEVEM ser preenchidos (`TipoData: '6'` e `StatusAnaliseData: 'ATRASO'`).
+    - (Substitui e corrige a antiga regra de Consistência #2)
+
+5.  **`SituacaoNF` e `StatusAnaliseData` (PODEM COEXISTIR):**
+    - Estes dois campos representam conceitos diferentes (Estado Físico vs. Performance de Prazo) e **PODEM E DEVEM coexistir** se o usuário perguntar por ambos. A sua procedure SQL foi projetada para isso.
+    - Exemplo Válido: "notas em trânsito e com atraso".
+    - (Substitui e corrige as antigas regras de Consistência #3 e Hierarquia #4, que estavam erradas)
+
+6.  **`ESTADO LOGÍSTICO` (`SituacaoNF`):**
+    - O status logístico (ex: 'TRÂNSITO', 'RETIDA') tem prioridade mais baixa que um evento de data explícito.
+    - (Vindo da antiga regra de Hierarquia #3)
+
+7.  **`ORDENAÇÃO`:**
+    - Se "SortColumn" for `null`, "SortDirection" também DEVE ser `null`.
+    - (Vindo da antiga regra de Consistência #4)
+---
 
 Exemplos:
----
-Texto: "Mostre todas as notas com situação 'RETIDA' para o cliente BEXX"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": "BEXX", "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "RETIDA", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 Texto: "Quais notas de operação OutBound-SPO estão com análise de performance 'ATRASO'?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": "OutBound-SPO", "SituacaoNF": null, "StatusAnaliseData": "ATRASO", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
@@ -265,12 +288,6 @@ JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "2", 
 Texto: "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": "valor_nf", "SortDirection": "DESC"}}
 ---
-Texto: "notas previstas para amanhã"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DIA SEGUINTE", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
----
-Texto: "me mostre as notas com status DO DIA"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DO DIA", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
----
 Texto: "Me mostre as notas com status de análise de performance ENTREGUE"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "ENTREGUE", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
@@ -283,23 +300,11 @@ JSON: {{"NF": null, "DE": "{month_start}", "ATE": "{month_end}", "TipoData": "3"
 Texto: "Quais notas fiscais têm status de entregue?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "ENTREGUE", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "Liste as notas da transportadora Expresso Veloz para a cidade de Salvador que foram emitidas ontem"
-JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "3", "Cliente": null, "Transportadora": "Expresso Veloz", "UFDestino": "BA", "CidadeDestino": "Salvador", "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
----
-Texto: "Quais notas fiscais foram emitidas nesta semana?"
-JSON: {{"NF": null, "DE": "{week_start}", "ATE": "{week_end}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+Texto: "Me mostre as notas fiscais em trânsito E com atraso"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": "ATRASO", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 Texto: "qual o status da entrega?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
----
-Texto: "quais são os clientes?"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
----
-Texto: "notas emitidas ontem e entregues hoje"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "ENTREGUE", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
----
-Texto: "Quais notas têm entrega prevista para amanhã?"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DIA SEGUINTE", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 
 Agora, analise o seguinte texto:

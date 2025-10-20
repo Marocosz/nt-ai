@@ -1,47 +1,40 @@
 # =================================================================================================
 # =================================================================================================
 #
-#                    SCRIPT DE TESTE DE INTEGRAÇÃO (DEBUG RUNNER)
+#                    SCRIPT DE TESTE DE INTEGRAÇÃO ROBUSTO (DEBUG RUNNER v2)
 #
 # Visão Geral do Módulo:
 #
-# Este arquivo é uma ferramenta de linha de comando para realizar testes de integração
-# no microsserviço 'nt-ai'. Ele não é parte da aplicação principal, mas sim um
-# script utilitário para desenvolvedores, projetado para validar o comportamento
-# de ponta a ponta da cadeia de IA.
+# Este script é uma ferramenta de linha de comando resiliente para realizar testes de
+# integração no microsserviço 'nt-ai'. Ele é projetado para rodar de forma autônoma
+# e lidar com falhas de rede, timeouts e limites de taxa (rate limiting) da API.
 #
 # Arquitetura e Fluxo de Trabalho:
 #
 # 1. Leitura do Arquivo de Testes:
-#    - O script é executado a partir do terminal, recebendo como argumento o caminho
-#      para um arquivo de texto (ex: `testes_otimizados.txt`).
-#    - Ele lê este arquivo linha por linha, ignorando linhas vazias ou aquelas que
-#      começam com '#' ou '=', permitindo a criação de arquivos de teste comentados.
+#    - Lê um arquivo de texto linha por linha, ignorando comentários.
 #
-# 2. Execução em Loop:
-#    - Itera sobre cada query lida do arquivo de teste.
+# 2. Execução em Loop com Retentativas (A Lógica Principal):
+#    - Itera sobre cada query. Para cada query, ele entra em um loop de "tentativa infinita".
+#    - Ele SÓ passará para a próxima query (ex: Teste #2) após o teste atual
+#      (ex: Teste #1) ser concluído com um `status_code == 200`.
 #
-# 3. Chamada à API de Debug:
-#    - Para cada query, envia uma requisição HTTP POST para o endpoint `/debug-query`
-#      do microsserviço. Este endpoint é específico para testes e retorna os
-#      resultados intermediários da cadeia de IA.
+# 3. Tratamento de Erros de Conexão e Timeout:
+#    - Se o script não conseguir conectar ao microsserviço ou se a requisição estourar
+#      o `timeout` (uma `RequestException`), ele imprimirá o erro, aguardará o
+#      `RETRY_DELAY` (ex: 60 segundos) e tentará a *mesma query* novamente.
 #
-# 4. Processamento e Exibição da Resposta:
-#    - Verifica se a resposta da API foi bem-sucedida (status 200).
-#    - Se sim, formata e exibe no console a "Query Otimizada" e o "JSON de Filtros Gerado",
-#      usando cores para facilitar a leitura.
-#    - Se ocorrer um erro na API (ex: 500) ou uma falha de conexão, exibe uma mensagem
-#      de erro clara e detalhada.
+# 4. Tratamento de Erros de API (Rate Limiting, etc.):
+#    - Se a API retornar um erro (ex: 429 "Too Many Requests", 413 "Tokens Exceeded", 500 "Server Error"),
+#      o script imprimirá o erro, aguardará o `RETRY_DELAY` (ex: 60 segundos) e
+#      tentará a *mesma query* novamente.
 #
-# 5. Controle de Taxa (Rate Limiting):
-#    - Pausa por um segundo (`time.sleep`) entre cada requisição para evitar sobrecarregar
-#      a API do microsserviço ou atingir limites de taxa da API do LLM.
+# 5. Controle de Taxa Preventivo:
+#    - Após uma query ser BEM-SUCEDIDA, o script pausa por `DELAY_BETWEEN_REQUESTS` (ex: 10 segundos)
+#      antes de iniciar a próxima, como uma medida "amigável" para evitar o rate limiting.
 #
 # Como Usar:
-#
-# Execute o script a partir do diretório raiz do projeto, passando o nome do arquivo de
-# teste como argumento. Exemplo:
-# > python scripts/debug_runner.py testes.txt
+# > python scripts/debug_runner.py testes_finais_cobertura_total.txt
 #
 # =================================================================================================
 # =================================================================================================
@@ -50,7 +43,6 @@ import requests
 import json
 import time
 import sys
-# Importa as bibliotecas para adicionar cor e estilo à saída do terminal, melhorando a legibilidade.
 from colorama import Fore, Style, init
 
 # Inicializa o colorama. `autoreset=True` garante que cada print volte ao estilo padrão.
@@ -61,14 +53,19 @@ init(autoreset=True)
 
 # URL do endpoint de debug do microsserviço.
 MICROSERVICE_URL = "http://127.0.0.1:5001/debug-query"
-# Intervalo em segundos para pausar entre as requisições, para evitar rate limiting.
+
+# Delay "amigável" entre requisições BEM-SUCEDIDAS para EVITAR o rate limit.
 DELAY_BETWEEN_REQUESTS = 10  # segundos
+
+# Delay "de penalidade" quando um erro (timeout, rate limit) ocorre, para AGUARDAR o reset da API.
+# Ajuste este valor se a API exigir uma espera mais longa (ex: 300 para 5 minutos).
+RETRY_DELAY = 60 # 60 segundos
 
 def run_tests(queries):
     """
-    Função principal que executa a suíte de testes.
-    Ela recebe uma lista de strings (queries) e itera sobre elas,
-    chamando o microsserviço para cada uma.
+    Função principal que executa a suíte de testes de forma resiliente.
+    Ela recebe uma lista de queries e só passa para a próxima após o
+    sucesso da query atual.
     """
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================")
     print(f"{Style.BRIGHT}{Fore.MAGENTA} INICIANDO ROTEIRO DE TESTES - New Tracking Intent AI")
@@ -81,47 +78,59 @@ def run_tests(queries):
 
         # Prepara o payload JSON para a requisição POST.
         payload = {"query": query}
-
-        # O bloco try/except lida com possíveis falhas de conexão ou timeouts.
-        try:
-            # Faz a chamada POST para o endpoint de debug, com um timeout de 60 segundos.
-            response = requests.post(MICROSERVICE_URL, json=payload, timeout=60)
-
-            # Verifica se a chamada foi bem-sucedida (status code 200 OK).
-            if response.status_code == 200:
-                # Extrai os dados da resposta JSON.
-                result_data = response.json()
-                
-                # Usa o método .get() para acessar as chaves de forma segura,
-                # fornecendo uma mensagem de erro padrão caso a chave não exista.
-                enhanced_query = result_data.get("enhanced_query", "ERRO: Não foi possível gerar a query otimizada.")
-                parsed_json = result_data.get("parsed_json", {})
-
-                # Exibe os resultados formatados no console.
-                print(f"{Fore.YELLOW}1. Query Otimizada (pela IA):")
-                print(f"{Style.NORMAL}{Fore.YELLOW}{enhanced_query}\n")
-                
-                print(f"{Fore.GREEN}2. JSON de Filtros Gerado:")
-                # Usa json.dumps para formatar o JSON de forma legível (pretty-printing).
-                # `ensure_ascii=False` garante a exibição correta de caracteres acentuados.
-                print(f"{Style.NORMAL}{Fore.GREEN}{json.dumps(parsed_json, indent=2, ensure_ascii=False)}")
-            
-            else:
-                # Se a API retornar um erro (ex: 400, 500), exibe os detalhes.
-                error_details = response.json().get('detail', 'Erro desconhecido.')
-                print(f"{Fore.RED}ERRO na API (Status {response.status_code}): {error_details}")
-
-        except requests.exceptions.RequestException as e:
-            # Captura falhas críticas, como a API estar offline ou a rede indisponível.
-            print(f"{Fore.RED}FALHA CRÍTICA: Não foi possível conectar ao microsserviço.")
-            print(f"{Fore.RED}Verifique se ele está rodando em {MICROSERVICE_URL}.")
-            print(f"{Fore.RED}Detalhes do erro: {e}")
-            # Interrompe a execução dos testes, pois não faz sentido continuar se a API está offline.
-            break
         
+        # --- INÍCIO DA LÓGICA DE RETENTATIVA ---
+        success = False
+        while not success:
+            try:
+                # Faz a chamada POST para o endpoint de debug, com um timeout de 60 segundos.
+                response = requests.post(MICROSERVICE_URL, json=payload, timeout=60)
+
+                # Verifica se a chamada foi bem-sucedida (status code 200 OK).
+                if response.status_code == 200:
+                    # Extrai os dados da resposta JSON.
+                    result_data = response.json()
+                    
+                    enhanced_query = result_data.get("enhanced_query", "ERRO: Não foi possível gerar a query otimizada.")
+                    parsed_json = result_data.get("parsed_json", {})
+
+                    # Exibe os resultados formatados no console.
+                    print(f"{Fore.YELLOW}1. Query Otimizada (pela IA):")
+                    print(f"{Style.NORMAL}{Fore.YELLOW}{enhanced_query}\n")
+                    
+                    print(f"{Fore.GREEN}2. JSON de Filtros Gerado:")
+                    print(f"{Style.NORMAL}{Fore.GREEN}{json.dumps(parsed_json, indent=2, ensure_ascii=False)}")
+                    
+                    # SINALIZA SUCESSO: Quebra o loop 'while' e passa para a próxima query.
+                    success = True
+                
+                else:
+                    # Erro da API (ex: 429, 413, 500). A API está online, mas retornou um erro.
+                    error_details = "Erro desconhecido."
+                    try:
+                        # Tenta extrair a mensagem de erro detalhada do JSON da API.
+                        error_details = response.json().get('detail', response.text)
+                    except json.JSONDecodeError:
+                        error_details = response.text
+                        
+                    print(f"{Fore.YELLOW}ERRO na API (Status {response.status_code}): {error_details}")
+                    print(f"{Fore.YELLOW}Aguardando {RETRY_DELAY} segundos para tentar novamente a MESMA query...")
+                    time.sleep(RETRY_DELAY)
+                    # 'success' continua False, então o loop 'while' repetirá a query.
+
+            except requests.exceptions.RequestException as e:
+                # Erro de Rede: Captura falhas críticas (Timeout, Conexão Recusada, DNS, etc.).
+                print(f"{Fore.RED}FALHA DE CONEXÃO/TIMEOUT: {e}")
+                print(f"{Fore.RED}Verifique se o microsserviço está rodando em {MICROSERVICE_URL}.")
+                print(f"{Fore.YELLOW}Aguardando {RETRY_DELAY} segundos para tentar novamente a MESMA query...")
+                time.sleep(RETRY_DELAY)
+                # 'success' continua False, então o loop 'while' repetirá a query.
+        
+        # --- FIM DA LÓGICA DE RETENTATIVA ---
+
         print(f"{Style.BRIGHT}{Fore.CYAN}---------------------\n")
         
-        # Pausa a execução para não sobrecarregar o serviço de IA.
+        # Pausa "amigável" entre os testes BEM-SUCEDIDOS para evitar o rate limit.
         if i < total_queries - 1:
             time.sleep(DELAY_BETWEEN_REQUESTS)
 
