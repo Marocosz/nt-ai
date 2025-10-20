@@ -1,7 +1,7 @@
 # =================================================================================================
 # =================================================================================================
 #
-#                    SCRIPT DE TESTE DE INTEGRAÇÃO ROBUSTO (DEBUG RUNNER v2)
+#                               SCRIPT DE TESTE DE INTEGRAÇÃO ROBUSTO (DEBUG RUNNER v2)
 #
 # Visão Geral do Módulo:
 #
@@ -31,7 +31,7 @@
 #
 # 5. Controle de Taxa Preventivo:
 #    - Após uma query ser BEM-SUCEDIDA, o script pausa por `DELAY_BETWEEN_REQUESTS` (ex: 10 segundos)
-#      antes de iniciar a próxima, como uma medida "amigável" para evitar o rate limiting.
+#    - antes de iniciar a próxima, como uma medida "amigável" para evitar o rate limiting.
 #
 # Como Usar:
 # > python scripts/debug_runner.py testes_finais_cobertura_total.txt
@@ -43,6 +43,7 @@ import requests
 import json
 import time
 import sys
+import datetime # <-- ADICIONADO PARA O TIMER
 from colorama import Fore, Style, init
 
 # Inicializa o colorama. `autoreset=True` garante que cada print volte ao estilo padrão.
@@ -55,7 +56,7 @@ init(autoreset=True)
 MICROSERVICE_URL = "http://127.0.0.1:5001/debug-query"
 
 # Delay "amigável" entre requisições BEM-SUCEDIDAS para EVITAR o rate limit.
-DELAY_BETWEEN_REQUESTS = 10  # segundos
+DELAY_BETWEEN_REQUESTS = 5 # segundos
 
 # Delay "de penalidade" quando um erro (timeout, rate limit) ocorre, para AGUARDAR o reset da API.
 # Ajuste este valor se a API exigir uma espera mais longa (ex: 300 para 5 minutos).
@@ -83,11 +84,33 @@ def run_tests(queries):
         success = False
         while not success:
             try:
-                # Faz a chamada POST para o endpoint de debug, com um timeout de 60 segundos.
-                response = requests.post(MICROSERVICE_URL, json=payload, timeout=60)
+                # ==================================================================
+                # --- INÍCIO DA ALTERAÇÃO (TIMER) ---
+                # ==================================================================
+                # Captura o tempo exato de início da tentativa
+                start_time_epoch = time.time()
+                start_time_str = datetime.datetime.now().strftime('%H:%M:%S')
+                print(f"{Style.DIM}{Fore.WHITE}Iniciando requisição às {start_time_str}...{Style.RESET_ALL}")
+                # ==================================================================
+                # --- FIM DA ALTERAÇÃO ---
+                # ==================================================================
+
+                # Faz a chamada POST para o endpoint de debug, com um timeout de 120 segundos.
+                response = requests.post(MICROSERVICE_URL, json=payload, timeout=120)
 
                 # Verifica se a chamada foi bem-sucedida (status code 200 OK).
                 if response.status_code == 200:
+                    # ==================================================================
+                    # --- INÍCIO DA ALTERAÇÃO (TIMER) ---
+                    # ==================================================================
+                    # Captura o tempo exato de fim e calcula a duração
+                    end_time_epoch = time.time()
+                    end_time_str = datetime.datetime.now().strftime('%H:%M:%S')
+                    duration = end_time_epoch - start_time_epoch
+                    # ==================================================================
+                    # --- FIM DA ALTERAÇÃO ---
+                    # ==================================================================
+
                     # Extrai os dados da resposta JSON.
                     result_data = response.json()
                     
@@ -99,7 +122,16 @@ def run_tests(queries):
                     print(f"{Style.NORMAL}{Fore.YELLOW}{enhanced_query}\n")
                     
                     print(f"{Fore.GREEN}2. JSON de Filtros Gerado:")
-                    print(f"{Style.NORMAL}{Fore.GREEN}{json.dumps(parsed_json, indent=2, ensure_ascii=False)}")
+                    print(f"{Style.NORMAL}{Fore.GREEN}{json.dumps(parsed_json, indent=2, ensure_ascii=False)}\n") # Adicionado \n
+                    
+                    # ==================================================================
+                    # --- INÍCIO DA ALTERAÇÃO (TIMER) ---
+                    # ==================================================================
+                    # Exibe o log de performance da requisição
+                    print(f"{Style.BRIGHT}{Fore.BLUE}Tempo de Resposta: {duration:.2f} segundos (Início: {start_time_str} | Fim: {end_time_str}){Style.RESET_ALL}")
+                    # ==================================================================
+                    # --- FIM DA ALTERAÇÃO ---
+                    # ==================================================================
                     
                     # SINALIZA SUCESSO: Quebra o loop 'while' e passa para a próxima query.
                     success = True
@@ -132,6 +164,7 @@ def run_tests(queries):
         
         # Pausa "amigável" entre os testes BEM-SUCEDIDOS para evitar o rate limit.
         if i < total_queries - 1:
+            print(f"{Style.BRIGHT}{Fore.MAGENTA}Aguardando {DELAY_BETWEEN_REQUESTS} segundos antes do próximo teste...{Style.RESET_ALL}")
             time.sleep(DELAY_BETWEEN_REQUESTS)
 
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================")

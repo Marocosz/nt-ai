@@ -146,7 +146,7 @@ def _create_chains():
         JSON_PARSER_PROMPT
         | llm
         | StrOutputParser()
-        | RunnableLambda(_extract_json_from_output)
+        # | RunnableLambda(_extract_json_from_output)  # Chain of Thought extraction step
         | output_fixing_parser
     )
     # ==================================================================

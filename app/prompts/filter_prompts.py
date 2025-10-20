@@ -321,15 +321,27 @@ JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, 
 Texto: "qual o status da entrega?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
+Texto: "Quais notas foram emitidas esta semana?"
+JSON: {{"NF": null, "DE": "{week_start}", "ATE": "{week_end}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
 
 Agora, analise o seguinte texto.
 Texto: {enhanced_query}
+
+
+JSON FINAL:
+"""
+JSON_PARSER_PROMPT = PromptTemplate.from_template(parser_template)
+
+
+"""
+Chain of Thought - Raciocínio Passo a Passo para Extração de Entidades
+------------------------------------------------------------
+Adicionar ao final do prompt do JSON_PARSER_PROMPT para melhorar a precisão da extração.
 
 Pense passo a passo antes de gerar o JSON final:
 1.  **Análise do Texto:** (Descreva brevemente o que o usuário pediu).
 2.  **Extração de Entidades:** (Liste cada entidade que você encontrou: NF, DE, ATE, TipoData, Cliente, SituacaoNF, StatusAnaliseData, SortColumn, etc.).
 3.  **Verificação de Regras:** (Verifique mentalmente as regras de prioridade. Ex: "Regra 5 (Coexistência) se aplica: SituacaoNF e StatusAnaliseData estão presentes. Regra 1 (NF) não se aplica...").
 
-JSON FINAL:
 """
-JSON_PARSER_PROMPT = PromptTemplate.from_template(parser_template)
