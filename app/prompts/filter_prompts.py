@@ -1,7 +1,7 @@
 # =================================================================================================
 # =================================================================================================
 #
-#                       PROMPT ENGINEERING HUB - O CÉREBRO DA APLICAÇÃO
+#                       PROMPT ENGINEERING HUB - O CÉREBRO DA APLICAÇÃO
 #
 # -------------------------------------------------------------------------------------------------
 # Propósito do Arquivo:
@@ -19,16 +19,16 @@
 # que operam em sequência, como uma linha de montagem:
 #
 # 1. O Tradutor (`QUERY_ENHANCER_PROMPT`):
-#    - Responsabilidade: Normalizar a pergunta do usuário de forma segura e previsível.
-#    - Ação: Recebe a pergunta bruta do usuário (ex: "notas rodando") e a traduz para os
-#      termos de negócio canônicos (ex: "notas em trânsito"), expandindo abreviações
-#      e corrigindo a formatação, sem nunca alterar a intenção original.
+#    - Responsabilidade: Normalizar a pergunta do usuário de forma segura e previsível.
+#    - Ação: Recebe a pergunta bruta do usuário (ex: "notas rodando") e a traduz para os
+#      termos de negócio canônicos (ex: "notas em trânsito"), expandindo abreviações
+#      e corrigindo a formatação, sem nunca alterar a intenção original.
 #
 # 2. O Especialista em Extração (`JSON_PARSER_PROMPT`):
-#    - Responsabilidade: Converter a pergunta já normalizada em um objeto JSON estruturado.
-#    - Ação: Recebe a pergunta clara do Tradutor e, com base em um conjunto robusto de
-#      regras e exemplos, extrai todas as entidades (datas, status, locais, ordenação)
-#      e as mapeia para os campos do JSON que serão usados como filtros na procedure.
+#    - Responsabilidade: Converter a pergunta já normalizada em um objeto JSON estruturado.
+#    - Ação: Recebe a pergunta clara do Tradutor e, com base em um conjunto robusto de
+#      regras e exemplos, extrai todas as entidades (datas, status, locais, ordenação)
+#      e as mapeia para os campos do JSON que serão usados como filtros na procedure.
 #
 # Este design modular torna o sistema mais robusto, previsível e fácil de depurar,
 # pois cada etapa da interpretação pode ser testada e aprimorada de forma isolada.
@@ -49,38 +49,41 @@ enhancer_template = """
 Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é normalizar a pergunta do usuário de forma segura e previsível. Sua diretriz principal é **preservar 100% da intenção original do usuário.** Você nunca deve adicionar ou remover informações ou filtros. Responda APENAS com a frase reescrita.
 
 --- REGRAS DE OURO (NÃO QUEBRE NUNCA) ---
-1.  **PROIBIDO ADICIONAR CONCEITOS:** Se o usuário pediu por "entregues", a frase final SÓ PODE conter "entregues". Nunca adicione "emitidas" ou qualquer outro evento que não estava lá.
-2.  **PROIBIDO REMOVER CONCEITOS:** Se o usuário mencionou um status ("rodando") e uma ordenação ("mais caro"), a frase final DEVE conter AMBOS os conceitos traduzidos.
-3.  **REGRA MESTRE DE PRESERVAÇÃO DE EVENTOS:** As palavras "agenda", "entregue", "emitido", "previsto", "previsão real" e "baixada" são **TERMOS DE EVENTO DE DATA PROTEGIDOS**. Você DEVE mantê-las na frase reescrita exatamente como elas apareceram. **NUNCA** as traduza para um "status de análise" (como "DO DIA" ou "DIA SEGUINTE").
+1.  **PROIBIDO ADICIONAR CONCEITOS:** Se o usuário pediu por "entregues", a frase final SÓ PODE conter "entregues". Nunca adicione "emitidas" ou qualquer outro evento que não estava lá.
+2.  **PROIBIDO REMOVER CONCEITOS:** Se o usuário mencionou um status ("rodando") e uma ordenação ("mais caro"), a frase final DEVE conter AMBOS os conceitos traduzidos.
+3.  **REGRA MESTRE DE PRESERVAÇÃO DE EVENTOS:** As palavras "agenda", "entregue", "emitido", "previsto", "previsão real" e "baixada" são **TERMOS DE EVENTO DE DATA PROTEGIDOS**. Você DEVE mantê-las na frase reescrita exatamente como elas apareceram. **NUNCA** as traduza para um "status de análise" (como "DO DIA" ou "DIA SEGUINTE").
 
 --- TAREFAS PERMITIDAS (SUAS ÚNICAS FUNÇÕES) ---
-1.  **EXPANDIR ABREVIAÇÕES:**
-    - "nf" -> "nota fiscal"
-    - "sp" -> "para o estado de São Paulo"
-    - "cli" -> "do cliente"
-    - "transp" -> "da transportadora"
-    - "ult sem" -> "última semana"
+1.  **EXPANDIR ABREVIAÇÕES:**
+    - "nf" -> "nota fiscal"
+    - "sp" -> "para o estado de São Paulo"
+    - "cli" -> "do cliente"
+    - "transp" -> "da transportadora"
+    - "ult sem" -> "última semana"
 
-2.  **MAPEAMENTO DE SINÔNIMOS PARA TERMOS DE NEGÓCIO:**
-    - "com atraso" -> "com status de análise ATRASO"
-    - "prevista para amanhã" -> "com status de análise DIA SEGUINTE"
-    - "prevista para hoje" -> "com status de análise DO DIA"
-    - "entrega prevista para o dia seguinte" -> "com status de análise DIA SEGUINTE"
-    - "previstas para daqui a 2 dias" -> "com status de análise PREVISTO PARA 2 DIAS"
-    - "status entregue" -> "com situação logística ENTREGUE"
-    - "análise entregue" -> "com status de análise de performance ENTREGUE"
-    - "rodando", "viajando", "a caminho" -> "em trânsito"
-    - "paradas na fiscalização", "bloqueadas" -> "retidas"
-    - "ordenar pelo mais caro", "ordenar pelo maior valor" -> "ordenadas pelo maior valor"
-    - "ordenar pelo mais barato", "ordenar pelo menor valor" -> "ordenadas pelo menor valor"
+2.  **MAPEAMENTO DE SINÔNIMOS PARA TERMOS DE NEGÓCIO:**
+    - "com atraso" -> "com status de análise ATRASO"
+    - "prevista para amanhã" -> "com status de análise DIA SEGUINTE"
+    - "prevista para hoje" -> "com status de análise DO DIA"
+    - "entrega prevista para o dia seguinte" -> "com status de análise DIA SEGUINTE"
+    - "previstas para daqui a 2 dias" -> "com status de análise PREVISTO PARA 2 DIAS"
+    - "status entregue" -> "com situação logística ENTREGUE"
+    - "análise entregue" -> "com status de análise de performance ENTREGUE"
+    - "rodando", "viajando", "a caminho" -> "em trânsito"
+    - "paradas na fiscalização", "bloqueadas" -> "retidas"
+    - "ordenar pelo mais caro", "ordenar pelo maior valor" -> "ordenadas pelo maior valor"
+    - "ordenar pelo mais barato", "ordenar pelo menor valor" -> "ordenadas pelo menor valor"
 
-3.  **NORMALIZAR ESTRUTURA DA FRASE:** Inicie com letra maiúscula e mantenha o tom (pergunta ou comando), usando verbos como "Me mostre", "Liste", "Quais são".
+3.  **NORMALIZAR ESTRUTURA DA FRASE:** Inicie com letra maiúscula e mantenha o tom (pergunta ou comando), usando verbos como "Me mostre", "Liste", "Quais são".
 
-4.  **PRESERVAR ESPECIFICIDADE GEOGRÁFICA:** Se o usuário especificar "cidade de", mantenha essa estrutura na frase reescrita.
+4.  **PRESERVAR ESPECIFICIDADE GEOGRÁFICA:** Se o usuário especificar "cidade de", mantenha essa estrutura na frase reescrita.
 
-5.  **TERMOS TEMPORAIS OU DE PREVISÃO:** Se o usuário mencionar "previstas", "planejadas", "estimadas" ou termos similares,
-    NUNCA associe automaticamente a status de entrega ou análise. Apenas preserve o termo.
-    
+5.  **TERMOS TEMPORAIS OU DE PREVISÃO:** Se o usuário mencionar "previstas", "planejadas", "estimadas" ou termos similares,
+    NUNCA associe automaticamente a status de entrega ou análise. Apenas preserve o termo.
+    
+--- REGRA DE VÁLVULA DE ESCAPE (AMBIGUIDADE) ---
+Se a pergunta do usuário contiver múltiplos termos que mapeiam para o MESMO conceito de negócio (ex: "rodando e retidas", ambos são status logísticos), NÃO traduza NENHUM deles. Preserve os termos originais (ex: "notas rodando e também as retidas") para que o Especialista em Extração (o próximo LLM) possa lidar com a ambiguidade.
+    
 ⚠️ IMPORTANTE: 
 Se não houver indicação explícita de status, situação ou tipo de evento, 
 NÃO INVENTE NENHUM. Apenas normalize a forma textual. NÃO ADICIONE NENHUM DADO DE REGRA DE NEGÓCIO NA FRASE CASO ELA NÃO TENHA SIDO PASSADO PELA ORIGINAL!
@@ -92,7 +95,7 @@ Pergunta Reescrita: "Quais notas fiscais foram entregues hoje?"
 (Explicação: Apenas expandiu "nf" para "nota fiscal". Não adicionou "emitidas".)
 ---
 Pergunta Original: "notas rodando ordenadas pelo mais caro"
-Pergunta Reescrita: "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
+Pergunta Reescita: "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
 (Explicação: Mapeou "rodando" para "em trânsito" E "mais caro" para "maior valor", preservando ambos os conceitos.)
 ---
 Pergunta Original: "nf do cli acme transp veloz com atraso"
@@ -130,8 +133,17 @@ Sua tarefa principal é extrair TODOS os filtros mencionados. A ordenação é u
 
 A data de referência para cálculos é {today}.
 
+--- DICIONÁRIO DE VARIÁVEIS DE TEMPO ---
+- 'hoje': DE={today}, ATE={today}
+- 'ontem': DE={yesterday}, ATE={yesterday}
+- 'última semana' ou 'semana passada': DE={last_week_start}, ATE={last_week_end}
+- 'esta semana' ou 'dessa semana': DE={week_start}, ATE={week_end}
+- 'este mês' ou 'deste mês': DE={month_start}, ATE={month_end}
+- 'este semestre' ou 'neste semestre': DE={semester_start}, ATE={semester_end}
+- Faixas explícitas ("de X até Y") devem ser convertidas para AAAA-MM-DD.
+
 --- REGRA FUNDAMENTAL DE EVENTOS DE DATA (PRIORIDADE MÁXIMA) ---
-Se uma frase contém AMBOS um evento de data (como 'emitido', 'entregue', 'baixado') E um período de tempo (como 'hoje', 'nesta semana', 'em setembro'), sua tarefa mais importante é preencher AMBOS os campos: `TipoData` com o código do evento E `DE`/`ATE` com o período de tempo. Esta associação é obrigatória.
+Se uma frase contém AMBOS um evento de data (como 'emitido', 'entregue', 'baixado') E um período de tempo (como 'hoje', 'nesta semana', 'em setembro'), sua tarefa mais importante é preencher AMBOS os campos: `TipoData` com o código do evento E `DE`/`ATE` com o período de tempo (use o DICIONÁRIO DE VARIÁVEIS DE TEMPO acima). Esta associação é obrigatória.
 
 Analise o texto do usuário e extraia as seguintes entidades:
 - "NF": O número da nota fiscal (inteiro).
@@ -151,27 +163,27 @@ Analise o texto do usuário e extraia as seguintes entidades:
 
 Mapeamento para "TipoData" (eventos com data):
 {{
-    "agenda": "1", "entregue": "2", "emitido": "3",
-    "previsto": "4", "previsão real": "5", "baixada": "6"
+    "agenda": "1", "entregue": "2", "emitido": "3",
+    "previsto": "4", "previsão real": "5", "baixada": "6"
 }}
 
 Mapeamento para "Operacao" (propósito do transporte):
 Valores possíveis: "InBound-IPO", "InBound-MAO", "InBound-UDI", "OutBound-BAR", "OutBound-BAR-MAT.PRIMA", "OutBound-IPO", "OutBound-MAO", "OutBound-RIO", "OutBound-SPO", "OutBound-UDI".
 
 --- MAPEAMENTO CONTEXTUAL PARA "SituacaoNF" (estado logístico) --- 
-Use estas definições para entender a intenção do usuário sobre o estado atual da nota:
-- "ENTREGUE": A entrega foi concluída com sucesso. Sinônimos: "entregas finalizadas", "já chegaram", "concluídas".
-- "RETIDA": A entrega está parada por um problema externo, geralmente fiscal. Sinônimos: "retidas", "paradas na fiscalização", "bloqueadas".
-- "TRÂNSITO": A entrega está em movimento, a caminho do destino. Sinônimos: "em trânsito", "rodando", "viajando", "a caminho".
+Use estas definições para mapear os termos canônicos (ex: "em trânsito") para os valores JSON:
+- "ENTREGUE": A entrega foi concluída com sucesso. Termo canônico: "com situação logística ENTREGUE".
+- "RETIDA": A entrega está parada por um problema externo. Termo canônico: "retidas".
+- "TRÂNSITO": A entrega está em movimento. Termo canônico: "em trânsito".
 
 --- O campo "StatusAnaliseData" DEVE conter EXATAMENTE um dos seguintes valores: "ATRASO", "DIA SEGUINTE", ... Não use sinônimos ou variações no valor final do JSON. ---
-Use estas definições para entender a intenção do usuário:
-- "ATRASO": A entrega está atrasada em relação ao prazo. Sinônimos: "atrasado", "com atraso", "fora do prazo".
-- "DIA SEGUINTE": A entrega está prevista para o dia seguinte (amanhã). Sinônimos: "previsto para amanhã".
-- "DO DIA": A entrega está prevista para hoje. Sinônimos: "previsto para hoje", "status do dia".
-- "ENTREGUE": A análise de performance já foi concluída com o status de "entregue".
-- "FUTURO": A entrega está prevista para uma data futura (além de amanhã). Sinônimos: "em data futura".
-- "PREVISTO PARA 2 DIAS": A entrega está prevista para daqui a dois dias. Sinônimos: "para daqui a dois dias".
+Use estas definições para mapear os termos canônicos (ex: "com status de análise...") para os valores JSON:
+- "ATRASO": A entrega está atrasada. Termo canônico: "com status de análise ATRASO".
+- "DIA SEGUINTE": A entrega está prevista para amanhã. Termo canônico: "com status de análise DIA SEGUINTE".
+- "DO DIA": A entrega está prevista para hoje. Termo canônico: "com status de análise DO DIA".
+- "ENTREGUE": A análise de performance foi concluída. Termo canônico: "com status de análise de performance ENTREGUE".
+- "FUTURO": A entrega está prevista para uma data futura. Termo canônico: "em data futura".
+- "PREVISTO PARA 2 DIAS": A entrega está prevista para daqui a dois dias. Termo canônico: "com status de análise PREVISTO PARA 2 DIAS".
 ---
 
 Mapeamento para "UFDestino" (estado):
@@ -180,103 +192,101 @@ Valores possíveis: "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", 
 --- REGRAS DE DIFERENCIAÇÃO DE STATUS ---
 A seguir estão as três interpretações possíveis para um status. Você deve usar o contexto da frase para escolher a correta.
 
-1.  **Evento de Data (`TipoData`):** Responde "QUANDO algo aconteceu?". É acionado quando um evento (como 'entregue', 'emitido') está junto com um período de tempo (como 'hoje', 'ontem', 'nesta semana'). Neste caso, você DEVE preencher `TipoData` e `DE`/`ATE`.
-2.  **Estado Logístico (`SituacaoNF`):** Responde "ONDE está a nota AGORA?". É acionado por frases como "situação logística", "status atual", "em trânsito", "retida". Neste caso, você DEVE preencher `SituacaoNF`.
-3.  **Análise de Performance (`StatusAnaliseData`):** Responde "A nota está NO PRAZO?". É acionado por frases como "análise de performance", "status de análise", "com atraso", "previsto para hoje". Neste caso, você DEVE preencher `StatusAnaliseData`.
+1.  **Evento de Data (`TipoData`):** Responde "QUANDO algo aconteceu?". É acionado quando um evento (como 'entregue', 'emitido') está junto com um período de tempo (como 'hoje', 'ontem', 'nesta semana'). Neste caso, você DEVE preencher `TipoData` e `DE`/`ATE`.
+2.  **Estado Logístico (`SituacaoNF`):** Responde "ONDE está a nota AGORA?". É acionado por frases como "situação logística", "status atual", "em trânsito", "retida". Neste caso, você DEVE preencher `SituacaoNF`.
+3.  **Análise de Performance (`StatusAnaliseData`):** Responde "A nota está NO PRAZO?". É acionado por frases como "análise de performance", "status de análise", "com atraso", "previsto para hoje". Neste caso, você DEVE preencher `StatusAnaliseData`.
 
 --- REGRAS DE LÓGICA E PRIORIDADE (LEIA COM ATENÇÃO) ---
 
-1.  **REGRA DE PRECEDÊNCIA DE PERFORMANCE (PRIORIDADE MÁXIMA):**
-    - Frases que indicam performance de prazo são as mais específicas. Se você identificar uma destas frases, ela TEM PRIORIDADE sobre um evento de data genérico (como "previsto").
-    - **Frases de Performance:** "previsto para amanhã", "prevista para hoje", "para o dia seguinte", "para daqui a 2 dias", "status DO DIA", "com atraso".
-    - **Ação:** Você DEVE preencher **APENAS `StatusAnaliseData`**. Você **NÃO DEVE** preencher `TipoData` nestes casos.
-    - *Esta regra corrige os Testes #17 e #22.*
+1.  **REGRA DE PRECEDÊNCIA DE PERFORMANCE (PRIORIDADE MÁXIMA):**
+    - O Enhancer (primeira cadeia) já traduziu frases de performance de prazo para termos canônicos (ex: "com status de análise...").
+    - Se você identificar um desses **Termos de Performance Canônicos** (ex: "com status de análise DIA SEGUINTE", "com status de análise DO DIA", "com status de análise ATRASO"), eles TÊM PRIORIDADE sobre um evento de data genérico (como "previsto").
+    - **Ação:** Você DEVE preencher **APENAS `StatusAnaliseData`** com o valor correspondente (ex: "DIA SEGUINTE"). Você **NÃO DEVE** preencher `TipoData` nestes casos (a menos que a Regra 4 de coexistência se aplique).
+    - *Esta regra corrige os Testes #17 e #22.*
 
-2.  **REGRA DE EVENTO DE DATA (SEGUNDA PRIORIDADE):**
-    - Use esta regra se a REGRA 1 não se aplicar.
-    - Se uma frase contém AMBOS um **evento de data** (palavras como 'emitido', 'entregue', 'baixado', 'previsto', 'agendado', 'previsão real') E um **período de tempo** (palavras como 'hoje', 'ontem', 'nesta semana', 'em setembro'), sua tarefa é preencher AMBOS os campos: `TipoData` com o código do evento E `DE`/`ATE` com o período de tempo.
-    - *Esta regra corrige o Teste #11, garantindo que "emitidas nesta semana" preencha `TipoData: "3"`.*
+2.  **REGRA DE EVENTO DE DATA (SEGUNDA PRIORIDADE):**
+    - Use esta regra se a REGRA 1 não se aplicar.
+    - Se uma frase contém AMBOS um **evento de data** (palavras como 'emitido', 'entregue', 'baixado', 'previsto', 'agendado', 'previsão real') E um **período de tempo** (palavras como 'hoje', 'ontem', 'nesta semana', 'em setembro'), sua tarefa é preencher AMBOS os campos: `TipoData` com o código do evento E `DE`/`ATE` com o período de tempo.
+    - *Esta regra corrige o Teste #11, garantindo que "emitidas nesta semana" preencha `TipoData: "3"`.*
 
-3.  **REGRA DE ESTADO LOGÍSTICO (TERCEIRA PRIORIDADE):**
-    - Use `SituacaoNF` para o estado físico (ex: "em trânsito", "retida", "situação logística entregue") quando não houver um evento de data explícito.
+3.  **REGRA DE ESTADO LOGÍSTICO (TERCEIRA PRIORIDADE):**
+    - Use `SituacaoNF` para o estado físico (ex: "em trânsito", "retida", "com situação logística entregue") quando não houver um evento de data explícito.
 
-4.  **REGRA DE AMBIGUIDADE 'ENTREGUE':**
-    - 'entregues ontem' -> Segue a REGRA 2 (`TipoData: '2'`).
-    - 'status entregue' (via Enhancer: "situação logística ENTREGUE") -> Segue a REGRA 3 (`SituacaoNF: 'ENTREGUE'`).
-    - 'análise de performance entregue' -> Segue a REGRA 1 (`StatusAnaliseData: 'ENTREGUE'`).
+4.  **REGRA DE AMBIGUIDADE 'ENTREGUE' (PÓS-ENHANCER):**
+    - O Enhancer já diferenciou os contextos da palavra "entregue". Sua tarefa é extrair o termo canônico que você receber:
+    - Se a query for "entregues ontem" -> Segue a REGRA 2 (Evento de Data) -> `TipoData: '2'`, `DE: "{yesterday}"`, `ATE: "{yesterday}"`.
+    - Se a query for "com situação logística ENTREGUE" -> Segue a REGRA 3 (Estado Logístico) -> `SituacaoNF: 'ENTREGUE'`.
+    - Se a query for "com status de análise de performance ENTREGUE" -> Segue a REGRA 1 (Performance) -> `StatusAnaliseData: 'ENTREGUE'`.
 
-5.  **REGRA DE LOCALIZAÇÃO (SEM INFERÊNCIA):**
-    - Você NÃO DEVE inferir o `UFDestino` a partir da `CidadeDestino` (ex: 'Manaus' -> `CidadeDestino: "Manaus"`, `UFDestino: null`), a menos que o nome seja ambíguo (ex: 'São Paulo' -> `UFDestino: "SP"` E `CidadeDestino: "São Paulo"` se a frase for "cidade de São Paulo").
-    - *Esta regra formaliza o comportamento que você confirmou ser o correto.*
-    
+5.  **REGRA DE LOCALIZAÇÃO (SEM INFERÊNCIA):**
+    - Você NÃO DEVE inferir o `UFDestino` a partir da `CidadeDestino` (ex: 'Manaus' -> `CidadeDestino: "Manaus"`, `UFDestino: null`), a menos que o nome seja ambíguo (ex: 'São Paulo' -> `UFDestino: "SP"` E `CidadeDestino: "São Paulo"` se a frase for "cidade de São Paulo").
+    - *Esta regra formaliza o comportamento que você confirmou ser o correto.*
+    
 --- Regras de Localização ---
 - Se o usuário mencionar uma sigla de 2 letras da lista de "UFDestino", preencha o campo "UFDestino".
 - Se um nome pode ser tanto cidade quanto estado (ex: "São Paulo"), priorize o preenchimento de "UFDestino" com a sigla correspondente (ex: "SP"), a menos que o usuário especifique "cidade de".
 - Extraia o nome da cidade para "CidadeDestino" sempre que possível.
 
 --- REGRAS DE PRECISÃO ---
-1. Extração Completa de Datas: Se você identificar um período de tempo (ex: "ontem", "hoje"), você DEVE preencher os campos "DE" e "ATE" com as datas correspondentes.
+1. Extração Completa de Datas: Se você identificar um período de tempo (ex: "ontem", "hoje"), você DEVE preencher os campos "DE" e "ATE" com as datas correspondentes (use o DICIONÁRIO DE VARIÁVEIS DE TEMPO).
 2. Prioridade de Filtro: Se um `StatusAnaliseData` como 'DO DIA' ou 'DIA SEGUINTE' for identificado, priorize este filtro e NÃO extraia um `TipoData` ao mesmo tempo.
 3. Restrição de Inferência: NÃO infira filtros que não foram explicitamente mencionados. Se a pergunta for vaga, todos os filtros devem ser null.
 4. Regra para Códigos: Valores para "Operacao" (como "OutBound-SPO") são códigos únicos e NÃO DEVEM ser divididos ou interpretados. Extraia o valor exato.
 5. **REGRA MESTRE DE ASSOCIAÇÃO (EVENTO + DATA):** Quando uma pergunta contém um **evento de data** (como 'emitido', 'entregue', 'baixado') E um **período de tempo** (como 'hoje', 'nesta semana', 'em setembro'), sua principal tarefa é preencher ambos `DE`/`ATE` E o `TipoData` correspondente. Esta associação é obrigatória e tem alta prioridade.
-6. Se o texto contiver uma faixa explícita ("de X até Y"), sempre converta para formato completo ISO (AAAA-MM-DD).
-7. Se contiver "última semana" ou "semana passada", defina "DE" = {last_week_start} e "ATE" = {last_week_end}.
-8. Se contiver "esta semana" ou "dessa semana", defina "DE" = {week_start} e "ATE" = {week_end}.
-9. Se contiver "este mês" ou "deste mês", defina "DE" = {month_start} e "ATE" = {month_end}.
-10. Se contiver "este semestre" ou "neste semestre", defina "DE" = {semester_start} e "ATE" = {semester_end}.
 ---
 
 Regras de Ordenação ("SortColumn"):
 - O campo "SortColumn" SÓ PODE ter um dos seguintes valores: "data_entrega", "valor_nf", "data_emissao".
 - Mapeie frases do usuário para "SortColumn":
-    - "data de entrega", "entrega mais recente", "entrega mais antiga" -> "data_entrega"
-    - "valor", "preço", "mais caro", "mais barato", "valor da nota" -> "valor_nf"
-    - "data de emissão", "emissão mais recente", "mais novas" -> "data_emissao"
+    - "data de entrega", "entrega mais recente", "entrega mais antiga" -> "data_entrega"
+    - "valor", "preço", "mais caro", "mais barato", "valor da nota" -> "valor_nf"
+    - "data de emissão", "emissão mais recente", "mais novas" -> "data_emissao"
 - Mapeie frases para "SortDirection":
-    - "mais recente", "maior", "mais caro", "decrescente" -> "DESC"
-    - "mais antigo", "menor", "mais barato", "crescente" -> "ASC"
+    - "mais recente", "maior", "mais caro", "decrescente" -> "DESC"
+    - "mais antigo", "menor", "mais barato", "crescente" -> "ASC"
 - Se "SortColumn" for null, então "SortDirection" também DEVE ser null. Não defina um padrão.
 - Se o usuário pedir uma ordenação que não corresponde às opções acima, "SortColumn" deve ser null.
 
 Regras Gerais:
 - Se uma entidade não for encontrada, seu valor no JSON deve ser null.
-- Datas relativas: 'ontem' é {yesterday}, 'hoje' é {today}. Períodos como 'semana passada' ou 'dessa semana' são definidos nas regras de precisão.
 - Se a busca for por um número de NF, todos os outros campos devem ser null.
 - Se a pergunta não estiver dentro do contexto da nossa aplicação (notas fiscais e logística), todos os campos devem ser null.
 
+--- REGRA DE NEGAÇÃO E EXCLUSÃO (IMPORTANTE) ---
+Este sistema NÃO suporta filtros de exclusão (ex: "não", "exceto", "menos", "que não sejam"). Se você detectar uma negação em um filtro (ex: "exceto para SP"), você DEVE tratar esse filtro como não especificado, preenchendo o campo correspondente com `null`.
+
 --- REGRAS DE CONSISTÊNCIA E PRIORIDADE (LÓGICA FINAL) ---
 
-1.  **`NF` (PRIORIDADE ABSOLUTA):**
-    - Se um número de "NF" for identificado, todos os outros campos de filtro (DE, ATE, Cliente, etc.) DEVEM ser `null`.
-    - (Vindo da antiga regra de Consistência #1)
+1.  **`NF` (PRIORIDADE ABSOLUTA):**
+    - Se um número de "NF" for identificado, todos os outros campos de filtro (DE, ATE, Cliente, etc.) DEVEM ser `null`.
+    - (Vindo da antiga regra de Consistência #1)
 
-2.  **`TEMPO EXPLÍCITO` (ALTA PRIORIDADE):**
-    - O tempo explícito (ex: "ontem", "hoje", "nesta semana", "em setembro") tem prioridade máxima para definir os campos `DE` e `ATE`.
-    - (Vindo da antiga regra de Hierarquia #1)
+2.  **`TEMPO EXPLÍCITO` (ALTA PRIORIDADE):**
+    - O tempo explícito (ex: "ontem", "hoje", "nesta semana", "em setembro") tem prioridade máxima para definir os campos `DE` e `ATE`.
+    - (Vindo da antiga regra de Hierarquia #1)
 
-3.  **`EVENTOS DE DATA` (`TipoData`):**
-    - Palavras de evento (ex: 'emitido', 'entregue', 'baixado', 'previsto') são usadas para preencher o campo `TipoData`.
-    - A `REGRA MESTRE DE EVENTOS DE DATA` (definida acima no prompt) tem prioridade sobre outras interpretações de status.
-    - (Vindo da antiga regra de Hierarquia #2, combinada com a nova Regra Mestre)
+3.  **`EVENTOS DE DATA` (`TipoData`):**
+    - Palavras de evento (ex: 'emitido', 'entregue', 'baixado', 'previsto') são usadas para preencher o campo `TipoData`.
+    - A `REGRA MESTRE DE EVENTOS DE DATA` (definida acima no prompt) tem prioridade sobre outras interpretações de status.
+    - (Vindo da antiga regra de Hierarquia #2, combinada com a nova Regra Mestre)
 
-4.  **`TipoData` vs. `StatusAnaliseData` (QUASE SEMPRE EXCLUSIVOS):**
-    - Estes dois campos geralmente não coexistem, pois "evento de data" e "análise de performance" são conceitos diferentes.
-    - **Exceção (Permitida):** O usuário PODE pedir por um evento de data E um status de performance (ex: "notas baixadas na semana passada e que estão com atraso"). Neste caso, ambos DEVEM ser preenchidos (`TipoData: '6'` e `StatusAnaliseData: 'ATRASO'`).
-    - (Substitui e corrige a antiga regra de Consistência #2)
+4.  **`TipoData` vs. `StatusAnaliseData` (QUASE SEMPRE EXCLUSIVOS):**
+    - Estes dois campos geralmente não coexistem, pois "evento de data" e "análise de performance" são conceitos diferentes.
+    - **Exceção (Permitida):** O usuário PODE pedir por um evento de data E um status de performance (ex: "notas baixadas na semana passada e que estão com atraso"). Neste caso, ambos DEVEM ser preenchidos (`TipoData: '6'` e `StatusAnaliseData: 'ATRASO'`).
+    - (Substitui e corrige a antiga regra de Consistência #2)
 
-5.  **`SituacaoNF` e `StatusAnaliseData` (PODEM COEXISTIR):**
-    - Estes dois campos representam conceitos diferentes (Estado Físico vs. Performance de Prazo) e **PODEM E DEVEM coexistir** se o usuário perguntar por ambos. A sua procedure SQL foi projetada para isso.
-    - Exemplo Válido: "notas em trânsito e com atraso".
-    - (Substitui e corrige as antigas regras de Consistência #3 e Hierarquia #4, que estavam erradas)
+5.  **`SituacaoNF` e `StatusAnaliseData` (PODEM COEXISTIR):**
+    - Estes dois campos representam conceitos diferentes (Estado Físico vs. Performance de Prazo) e **PODEM E DEVEM coexistir** se o usuário perguntar por ambos. A sua procedure SQL foi projetada para isso.
+    - Exemplo Válido: "notas em trânsito e com atraso".
+    - (Substitui e corrige as antigas regras de Consistência #3 e Hierarquia #4, que estavam erradas)
 
-6.  **`ESTADO LOGÍSTICO` (`SituacaoNF`):**
-    - O status logístico (ex: 'TRÂNSITO', 'RETIDA') tem prioridade mais baixa que um evento de data explícito.
-    - (Vindo da antiga regra de Hierarquia #3)
+6.  **`ESTADO LOGÍSTICO` (`SituacaoNF`):**
+    - O status logístico (ex: 'TRÂNSITO', 'RETIDA') tem prioridade mais baixa que um evento de data explícito.
+    - (Vindo da antiga regra de Hierarquia #3)
 
-7.  **`ORDENAÇÃO`:**
-    - Se "SortColumn" for `null`, "SortDirection" também DEVE ser `null`.
-    - (Vindo da antiga regra de Consistência #4)
+7.  **`ORDENAÇÃO`:**
+    - Se "SortColumn" for `null`, "SortDirection" também DEVE ser `null`.
+    - (Vindo da antiga regra de Consistência #4)
 ---
 
 Exemplos:
@@ -312,8 +322,14 @@ Texto: "qual o status da entrega?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 
-Agora, analise o seguinte texto:
+Agora, analise o seguinte texto.
 Texto: {enhanced_query}
-JSON:
+
+Pense passo a passo antes de gerar o JSON final:
+1.  **Análise do Texto:** (Descreva brevemente o que o usuário pediu).
+2.  **Extração de Entidades:** (Liste cada entidade que você encontrou: NF, DE, ATE, TipoData, Cliente, SituacaoNF, StatusAnaliseData, SortColumn, etc.).
+3.  **Verificação de Regras:** (Verifique mentalmente as regras de prioridade. Ex: "Regra 5 (Coexistência) se aplica: SituacaoNF e StatusAnaliseData estão presentes. Regra 1 (NF) não se aplica...").
+
+JSON FINAL:
 """
 JSON_PARSER_PROMPT = PromptTemplate.from_template(parser_template)
