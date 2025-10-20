@@ -29,6 +29,24 @@ Para garantir a máxima performance e evitar consultas lentas na view principal 
 2. Consulta Principal e Enriquecimento: A consulta final, que contém todos os LEFT JOINs complexos para enriquecer os dados (buscar nomes de usuários, informações de nível de serviço, etc.), é executada apenas sobre a tabela temporária #FilteredData, e não sobre a VW_NOTAS inteira. Isso garante que a parte mais pesada da consulta opere no menor conjunto de dados possível.
 
 --------------------------------------------------------------------------------
+2.1. Fonte de Dados Principal: A View `VW_NOTAS`
+--------------------------------------------------------------------------------
+
+Toda a lógica da procedure opera sobre a view `[dbo].[VW_NOTAS]`. Esta view é a "fonte da verdade" e foi projetada para consolidar e pré-calcular dados de múltiplas tabelas do sistema, simplificando as consultas.
+
+As responsabilidades da `VW_NOTAS` incluem:
+
+1.  **Unificar Dados de Notas:** Juntar informações de tabelas de notas fiscais, conhecimentos de transporte (CT-e), clientes, transportadoras e ocorrências.
+
+2.  **Calcular Status Derivados:** A view contém a lógica de negócio para gerar as colunas de status que a procedure utiliza para filtrar. As duas mais importantes são:
+    * `SituacaoNF`: É calculada com base no fluxo de eventos da nota (se foi expedida, se tem ocorrência de retenção, se foi entregue). Representa o **estado físico**.
+    * `AnaliseData`: É calculada comparando a `PrevisaoEntrega` com a data atual (`GETDATE()`) e a `DataEntrega`. Representa a **análise de performance**.
+
+3.  **Consolidar Chaves de Múltiplos Sistemas:** A view já lida com a complexidade de unir dados que podem vir de diferentes fontes (como Protheus e outros sistemas), expondo chaves unificadas.
+
+Compreender que a `VW_NOTAS` já entrega os dados pré-processados é fundamental para entender a performance e a lógica da procedure.
+
+--------------------------------------------------------------------------------
 3. DETALHAMENTO DOS PARÂMETROS
 --------------------------------------------------------------------------------
 
@@ -368,6 +386,11 @@ O filtro final (WHERE) da consulta principal aplica as seguintes regras de acess
 5.4. Ordenação Padrão (Critério de Desempate)
 - Se nenhuma ordenação for especificada através dos parâmetros `@SortColumn` e `@SortDirection`, ou como critério de desempate, os resultados são ordenados pela `DataOcorrencia` mais recente (`DESC`).
 
+5.5. Salvaguarda de Performance (Full Scan)
+- A procedure possui um bloco de validação no início que verifica se pelo menos um filtro principal (além das datas padrão) foi fornecido.
+- Se nenhum filtro como @NF, @Cliente, @Transportadora, @SituacaoNF, etc., for passado, a procedure é interrompida (`RETURN`) e retorna uma estrutura de tabela vazia.
+- Isso é uma medida de segurança crucial para impedir que um usuário acidentalmente execute uma consulta completa na view (`SELECT * FROM VW_NOTAS`), o que poderia causar sobrecarga no banco de dados.
+
 --------------------------------------------------------------------------------
 6. ESTRUTURA DE SAÍDA
 --------------------------------------------------------------------------------
@@ -398,28 +421,3 @@ Exemplo 2: Simulação de uma busca complexa da IA.
         @SortDirection = 'DESC';
 
 *Neste caso, como @DE e @ATE não foram fornecidos, a procedure usará o período padrão dos últimos 7 dias.*
-
---------------------------------------------------------------------------------
-8. CÓDIGO-FONTE COMPLETO
---------------------------------------------------------------------------------
-
-CREATE OR ALTER PROC [dbo].[SP_TK_NOTAS_AI_HOM] (
-    @IdUsuario INT,
-    @NF INT = NULL,
-    @DE DATETIME = NULL,
-    @ATE DATETIME = NULL,
-    @TipoData VARCHAR(1) = NULL,
-    @Cliente VARCHAR(100) = NULL,
-    @Transportadora VARCHAR(100) = NULL,
-    @UFDestino CHAR(2) = NULL,
-    @CidadeDestino VARCHAR(100) = NULL,
-    @Operacao VARCHAR(100) = NULL,
-    @SituacaoNF VARCHAR(100) = NULL,
-    @StatusAnaliseData VARCHAR(100) = NULL,
-    @CNPJRaizTransp VARCHAR(8) = NULL,
-    @SortColumn VARCHAR(50) = NULL,
-    @SortDirection VARCHAR(4) = 'ASC'
-) AS BEGIN
-SET NOCOUNT ON;
--- (O restante do código da procedure viria aqui)
-END;
