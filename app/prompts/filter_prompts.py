@@ -66,7 +66,8 @@ Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é
     - "prevista para amanhã" -> "com status de análise DIA SEGUINTE"
     - "prevista para hoje" -> "com status de análise DO DIA"
     - "entrega prevista para o dia seguinte" -> "com status de análise DIA SEGUINTE"
-    - "previstas para daqui a 2 dias" -> "com status de análise PREVISTO PARA 2 DIAS"
+    - "prevista(o) para daqui a 2 dias" -> "com status de análise PREVISTO PARA 2 DIAS"
+    - "para daqui a dois dias" -> "com status de análise PREVISTO PARA 2 DIAS"
     - "status entregue" -> "com situação logística ENTREGUE"
     - "análise entregue" -> "com status de análise de performance ENTREGUE"
     - "rodando", "viajando", "a caminho" -> "em trânsito"
@@ -320,6 +321,9 @@ JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, 
 ---
 Texto: "qual o status da entrega?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Texto: "Quais notas estão previstas para daqui a 2 dias?" 
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "PREVISTO PARA 2 DIAS", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 Texto: "Quais notas foram emitidas esta semana?"
 JSON: {{"NF": null, "DE": "{week_start}", "ATE": "{week_end}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}

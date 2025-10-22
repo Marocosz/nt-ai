@@ -43,7 +43,7 @@ import requests
 import json
 import time
 import sys
-import datetime # <-- ADICIONADO PARA O TIMER
+import datetime
 from colorama import Fore, Style, init
 
 # Inicializa o colorama. `autoreset=True` garante que cada print volte ao estilo padrão.
