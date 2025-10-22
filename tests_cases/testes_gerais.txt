@@ -1,8 +1,5 @@
 # ====================================================================================
-# ROTEIRO DE TESTES DE COBERTURA TOTAL - New Tracking Intent AI
-#
-# Propósito: Validar CADA funcionalidade lógica do sistema com uma query
-# dedicada por regra. Este é o teste de aceitação final.
+# ROTEIRO DE TESTES DE COBERTURA PARCIAL GERAL - New Tracking Intent AI
 # ====================================================================================
 
 # --- Suíte 1: Filtros de ID e Entidade ---

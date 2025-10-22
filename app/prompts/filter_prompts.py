@@ -339,13 +339,29 @@ JSON_PARSER_PROMPT = PromptTemplate.from_template(parser_template)
 
 
 """
-Chain of Thought - Raciocínio Passo a Passo para Extração de Entidades
+=================================================================================
+NOTA SOBRE CHAIN OF THOUGHT (CoT) - ATUALMENTE DESATIVADO
+=================================================================================
+Originalmente, a técnica "Chain of Thought" foi implementada no JSON_PARSER_PROMPT
+para aumentar a precisão da extração em casos complexos. A técnica instruía o LLM
+a "pensar passo a passo" antes de gerar o JSON final, como no exemplo abaixo:
+
 ------------------------------------------------------------
-Adicionar ao final do prompt do JSON_PARSER_PROMPT para melhorar a precisão da extração.
-
+Exemplo de Bloco CoT (Removido do parser_template):
+------------------------------------------------------------
 Pense passo a passo antes de gerar o JSON final:
-1.  **Análise do Texto:** (Descreva brevemente o que o usuário pediu).
-2.  **Extração de Entidades:** (Liste cada entidade que você encontrou: NF, DE, ATE, TipoData, Cliente, SituacaoNF, StatusAnaliseData, SortColumn, etc.).
-3.  **Verificação de Regras:** (Verifique mentalmente as regras de prioridade. Ex: "Regra 5 (Coexistência) se aplica: SituacaoNF e StatusAnaliseData estão presentes. Regra 1 (NF) não se aplica...").
+1.  **Análise do Texto:** (Descreva brevemente o que o usuário pediu).
+2.  **Extração de Entidades:** (Liste cada entidade que você encontrou: NF, DE, ATE, TipoData, Cliente, SituacaoNF, StatusAnaliseData, SortColumn, etc.).
+3.  **Verificação de Regras:** (Verifique mentalmente as regras de prioridade. Ex: "Regra 5 (Coexistência) se aplica: SituacaoNF e StatusAnaliseData estão presentes. Regra 1 (NF) não se aplica...").
+------------------------------------------------------------
 
+**Motivo da Desativação:**
+Embora eficaz para a precisão, o CoT aumentou significativamente o "custo" (tempo de processamento e tokens) de cada chamada à API do LLM (Groq). Isso levou a problemas com os limites de taxa (rate limits) do nível gratuito, resultando em timeouts e até banimento temporário da conta durante testes em lote.
+
+**Decisão Atual:**
+O CoT foi removido para priorizar a estabilidade dos testes e evitar problemas com a API. A precisão resultante (sem CoT) foi considerada aceitável (~97%) para o contexto atual da aplicação, com a vantagem de permitir testes mais fluidos (embora ainda limitados pelo throttling da API).
+
+**Considerações Futuras:**
+Se a precisão em casos de borda se tornar crítica ou se a aplicação migrar para um plano pago da API LLM com limites de taxa mais altos, a reativação do CoT (junto com a lógica de extração no `master_chain.py`) pode ser reconsiderada.
+=================================================================================
 """

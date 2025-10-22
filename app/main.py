@@ -141,9 +141,6 @@ class QueryRequest(BaseModel):
     query: str
 
 
-# ==================================================================
-# --- INÍCIO DA ALTERAÇÃO (Função Auxiliar is_all_null) ---
-# ==================================================================
 def is_all_null(data):
     """
     Função auxiliar para verificar se todos os valores em um dicionário são None (null).
@@ -154,9 +151,6 @@ def is_all_null(data):
     if not data:
         return True # Dicionário vazio é considerado "todo nulo"
     return all(value is None for value in data.values())
-# ==================================================================
-# --- FIM DA ALTERAÇÃO ---
-# ==================================================================
 
 
 @app.post("/parse-query")
@@ -173,18 +167,12 @@ async def parse_query(request: QueryRequest):
         logger.info(f"Recebida nova requisição em /parse-query para a query: '{request.query[:50]}...'")
         result = await master_chain.ainvoke({"query": request.query})
 
-        # ==================================================================
-        # --- INÍCIO DA ALTERAÇÃO (Verificação de Nulos) ---
-        # ==================================================================
         if is_all_null(result):
             logger.warning(f"Consulta vaga/irrelevante detectada para query: '{request.query}'. Retornando erro 400.")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, # Usa status.HTTP_400_BAD_REQUEST
                 detail="A consulta fornecida é muito vaga, irrelevante ou não pôde ser interpretada. Por favor, seja mais específico."
             )
-        # ==================================================================
-        # --- FIM DA ALTERAÇÃO ---
-        # ==================================================================
 
         return result
     except HTTPException as http_exc:
@@ -208,23 +196,17 @@ async def debug_query(request: QueryRequest):
         logger.info(f"Recebida nova requisição em /debug-query para a query: '{request.query[:50]}...'")
         result = await debug_chain.ainvoke({"query": request.query})
 
-        # ==================================================================
-        # --- INÍCIO DA ALTERAÇÃO (Verificação de Nulos) ---
-        # ==================================================================
         # No debug_chain, o JSON está dentro da chave 'parsed_json'
         parsed_json_result = result.get("parsed_json")
 
         if is_all_null(parsed_json_result):
             logger.warning(f"Consulta vaga/irrelevante detectada (debug) para query: '{request.query}'. Retornando erro 400.")
             # Mesmo no debug, retornamos o erro 400 para consistência.
-            # O вызывающий (debug_runner) verá o erro HTTP em vez do JSON nulo.
+            # O  (debug_runner) verá o erro HTTP em vez do JSON nulo.
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, # Usa status.HTTP_400_BAD_REQUEST
                 detail="A consulta fornecida é muito vaga, irrelevante ou não pôde ser interpretada (JSON final seria nulo)."
             )
-        # ==================================================================
-        # --- FIM DA ALTERAÇÃO ---
-        # ==================================================================
         
         return result
     except HTTPException as http_exc:
