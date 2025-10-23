@@ -24,7 +24,7 @@
   - [**2. Endpoint de Debug**](#2-endpoint-de-debug)
     - [**Endpoint:** `POST /debug-query`](#endpoint-post-debug-query)
 - [💾 Componente de Banco de Dados](#-componente-de-banco-de-dados)
-  - [Stored Procedure: `SP_TK_NOTAS_AI_HOM`](#stored-procedure-sp_tk_notas_ai_hom)
+  - [Integração com Stored Procedure (Ex: `SP_TK_NOTAS_AI_HOM`)](#integração-com-stored-procedure-ex-sp_tk_notas_ai_hom)
 - [🚀 Instalação e Configuração Local](#-instalação-e-configuração-local)
   - [Pré-requisitos](#pré-requisitos)
   - [Passos de Instalação](#passos-de-instalação)
@@ -96,6 +96,7 @@ Para fins de desenvolvimento, depuração e demonstração, o repositório cont�
 ├── 📁 venvntia
 ├── 🔒 .env
 ├── 🔒 .env.example
+├── 📄 .gitignore
 ├── 📝 README.md
 └── 📄 requirements.txt
 ```
@@ -372,23 +373,30 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
 
 # 💾 Componente de Banco de Dados
 
-## Stored Procedure: `SP_TK_NOTAS_AI_HOM`
+> Esta seção descreve o papel do componente de banco de dados no fluxo geral, atuando como o consumidor final da saída gerada pela IA.
 
-Representa o estágio final do fluxo de dados iniciado pela consulta do usuário. Esta Stored Procedure, localizada no diretório [`/sql`](./sql/), é a **consumidora direta** do objeto JSON gerado pelo microsserviço Intent AI.
+## Integração com Stored Procedure (Ex: `SP_TK_NOTAS_AI_HOM`)
 
-**Responsabilidades Principais:**
+O objeto JSON de filtros gerado pelo microsserviço `nt-ai` é projetado para ser consumido por um componente backend (como o NT API) que, por sua vez, interage com o banco de dados principal da aplicação New Tracking, tipicamente através de uma **Stored Procedure** dedicada (como `SP_TK_NOTAS_AI_HOM` no ambiente de desenvolvimento/homologação).
 
-1.  **Receber Filtros:** Aceita todos os parâmetros extraídos pela IA (datas, `TipoData`, `Cliente`, `Transportadora`, `UFDestino`, `CidadeDestino`, `Operacao`, `SituacaoNF`, `StatusAnaliseData`, `CNPJRaizTransp`, `SortColumn`, `SortDirection`) como parâmetros de entrada.
-2.  **Consulta Dinâmica:** Constrói e executa uma consulta SQL dinâmica sobre a view principal (`VW_NOTAS`), aplicando apenas os filtros que foram fornecidos (não nulos) no JSON.
-3.  **Otimização:** Utiliza uma tabela temporária (`#FilteredData`) para aplicar os filtros iniciais de forma eficiente antes de realizar JOINs mais complexos para enriquecimento de dados.
-4.  **Lógica de Negócio e Permissões:** Inclui lógicas específicas do New Tracking, como o tratamento de datas padrão ('1900-01-01'), formatação de saída e, crucialmente, a aplicação de regras de permissão de acesso baseadas no `@IdUsuario`.
-5.  **Ordenação:** Implementa a ordenação dinâmica dos resultados com base nos parâmetros `@SortColumn` e `@SortDirection`.
+**Função Geral da Procedure:**
 
-> [!TIP]
-> **Documentação Detalhada da Procedure:**
-> A Stored Procedure `SP_TK_NOTAS_AI_HOM` possui uma lógica SQL complexa e otimizações específicas. Para uma análise aprofundada de seus parâmetros, blocos lógicos (validação, pré-filtragem, joins, permissões, ordenação), dependências (como `VW_NOTAS`) e exemplos de execução direta no banco, consulte o arquivo de documentação dedicado:
+A responsabilidade principal desta procedure no banco de dados é:
+
+1.  **Receber Filtros:** Aceitar os parâmetros correspondentes às chaves do JSON gerado pela IA.
+2.  **Executar Consulta:** Construir e executar uma consulta otimizada (frequentemente usando pré-filtragem em tabelas temporárias) sobre as views ou tabelas relevantes (ex: `VW_NOTAS`).
+3.  **Aplicar Lógicas Adicionais:** Implementar regras de negócio específicas do backend, como formatação de dados e, crucialmente, **regras de permissão de acesso** baseadas no usuário que fez a requisição original.
+4.  **Retornar Dados:** Enviar o conjunto de dados filtrado e formatado de volta para o backend/API consumidora.
+
+**Interface de Comunicação:**
+
+O **contrato** entre o microsserviço `nt-ai` e o componente de banco de dados é o **formato do objeto JSON** retornado pelo endpoint [`/parse-query`](#endpoint-post-parse-query). A procedure no banco de dados deve ser capaz de interpretar corretamente cada campo deste JSON como um parâmetro de filtro ou ordenação.
+
+> [!NOTE]
+> **Omissão de Detalhes Específicos do Banco de Dados:**
+> Para proteger informações potencialmente sensíveis sobre o esquema do banco de dados, lógica de negócios interna e otimizações específicas, o **código-fonte SQL da Stored Procedure**, scripts de teste associados e documentação detalhada (`PROCEDURE_SP_TK_NOTAS_AI_HOM_DOCS.md`) foram **intencionalmente omitidos** deste repositório público.
 >
-> **[`./sql/PROCEDURE_SP_TK_NOTAS_AI_HOM_DOCS.md`](./sql/PROCEDURE_SP_TK_NOTAS_AI_HOM_DOCS.md)**
+> A exposição desses detalhes poderia representar um risco de segurança e revelar aspectos proprietários do sistema New Tracking. O foco deste repositório é a camada de **interpretação de linguagem natural** (`nt-ai`), cuja interface pública é o JSON de filtros.
 
 ---
 # 🚀 Instalação e Configuração Local
