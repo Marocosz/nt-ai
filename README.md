@@ -10,6 +10,7 @@
   - [**Interface de Teste e Demonstração (Streamlit)**](#interface-de-teste-e-demonstração-streamlit)
 - [🌳 Estrutura do Projeto](#-estrutura-do-projeto)
 - [🔄 Updates](#-updates)
+  - [Nota sobre Chain of Thought (CoT) - Desativado](#nota-sobre-chain-of-thought-cot---desativado)
   - [Próximas Implementações](#próximas-implementações)
 - [🧠 Funcionamento](#-funcionamento)
   - [`app/main.py`](#appmainpy)
@@ -20,6 +21,14 @@
   - [**1. Endpoint de Produção**](#1-endpoint-de-produção)
     - [**Endpoint:** `POST /parse-query`](#endpoint-post-parse-query)
     - [**Endpoint:** `POST /debug-query`](#endpoint-post-debug-query)
+- [💾 Componente de Banco de Dados](#-componente-de-banco-de-dados)
+  - [Stored Procedure: `SP_TK_NOTAS_AI_HOM`](#stored-procedure-sp_tk_notas_ai_hom)
+- [🚀 Instalação e Configuração Local](#-instalação-e-configuração-local)
+  - [Pré-requisitos](#pré-requisitos)
+  - [Passos de Instalação](#passos-de-instalação)
+  - [Executando a Aplicação](#executando-a-aplicação)
+  - [Executando a Aplicação](#executando-a-aplicação-1)
+  - [Ferramentas de Teste e Desenvolvimento](#ferramentas-de-teste-e-desenvolvimento)
 
 ---
 
@@ -57,34 +66,35 @@ Para fins de desenvolvimento, depuração e demonstração, o repositório cont�
 # 🌳 Estrutura do Projeto
 
 ```
-├── 📁 app/
-│   ├── 📁 chains/
+├── 📁 app
+│   ├── 📁 chains
 │   │   ├── 🐍 __init__.py
 │   │   └── 🐍 master_chain.py
-│   ├── 📁 core/
+│   ├── 📁 core
 │   │   ├── 🐍 __init__.py
 │   │   └── 🐍 llm.py
-│   ├── 📁 prompts/
+│   ├── 📁 prompts
 │   │   ├── 🐍 __init__.py
 │   │   └── 🐍 filter_prompts.py
 │   ├── 🐍 __init__.py
 │   └── 🐍 main.py
-├── 📁 logs/
-├── 📁 scripts/
+├── 📁 scripts
 │   ├── 🐍 debug_runner.py
 │   └── 🐍 test_ui.py
-├── 📁 sql/
-│   ├── 🗄️ PROCEDURE_TESTE.sql
-│   ├── 🗄️ SCRIPT_TESTE_AI_HOM.sql
-│   └── 🗄️ SP_TK_NOTAS_AI_HOM.sql
-├── 📁 tests_case/
+├── 📁 sql
+│   ├── 📄 SCRIPT_TESTE_AI_HOM.sql
+│   ├── 📄 SP_DOC.txt
+│   └── 📄 SP_TK_NOTAS_AI_HOM.sql
+├── 📁 tests_cases
 │   ├── 📄 testes.txt
-│   └── 📄 testes_otimizado.txt
-├── 📁 venvntai/
-├── 🔒 .env 
-├── 📖 README.md
+│   └── 📄 testes_pontuais.txt
+├── 📁 venvntia
+├── 🔒 .env
+├── 🔒 .env.example
+├── 📝 README.md
 └── 📄 requirements.txt
 ```
+
 
 # 🔄 Updates
 
@@ -93,12 +103,64 @@ Para fins de desenvolvimento, depuração e demonstração, o repositório cont�
 
 | Versão | Data       | Mudanças principais               |
 |--------|------------|-----------------------------------|
-| 1.0    | 25/09/2025 | MVP funcional
+| 1.0    | 22/10/2025 | MVP funcional
 
+
+## Nota sobre Chain of Thought (CoT) - Desativado 
+
+Durante o desenvolvimento e otimização da precisão da IA (especialmente na Cadeia de Parsing), a técnica de **Chain of Thought (CoT)** foi implementada e testada.
+
+**O que é CoT?**
+
+Chain of Thought é uma técnica de engenharia de prompts onde instruímos o Modelo de Linguagem (LLM) a "pensar passo a passo" antes de fornecer a resposta final. Em vez de pedir diretamente o JSON, o prompt pedia ao LLM para primeiro:
+1.  Analisar o texto da consulta.
+2.  Listar as entidades extraídas.
+3.  Verificar as regras de negócio aplicáveis.
+4.  *Só então* gerar o "JSON FINAL".
+
+**Motivação para Usar (Benefícios):**
+
+A principal motivação foi **aumentar a precisão da extração em consultas complexas**. Forçar o LLM a articular seu raciocínio intermediário demonstrou melhorar significativamente a aderência às regras de negócio complexas, como:
+* A precedência do `StatusAnaliseData` sobre o `TipoData` 
+* A correta aplicação de regras de coexistência entre `SituacaoNF` e `StatusAnaliseData`.
+* A redução geral de erros onde o LLM poderia "esquecer" um filtro ao tentar formatar o JSON diretamente.
+
+**Como poderia ser Implementado:**
+
+1.  **Prompt (`filter_prompts.py`):** Adicionamos a seção "Pense passo a passo..." ao final do `JSON_PARSER_PROMPT`.
+    ```python
+    # Exemplo do bloco CoT adicionado ao prompt:
+    """
+    Pense passo a passo antes de gerar o JSON final:
+    1.  **Análise do Texto:** (...)
+    2.  **Extração de Entidades:** (...)
+    3.  **Verificação de Regras:** (...)
+
+    JSON FINAL:
+    """
+    ```
+2.  **Orquestração (`master_chain.py`):** Como a saída do LLM agora continha o "pensamento" + "JSON FINAL:", foi necessário adicionar um passo extra na `json_parser_chain` usando `RunnableLambda` e uma função auxiliar (`_extract_json_from_output`) para isolar apenas o bloco JSON antes de passá-lo ao `OutputFixingParser`.
+
+**Motivo da Desativação:**
+
+Apesar da melhoria na precisão, o CoT introduziu um **custo computacional significativamente maior** por chamada à API do LLM (Groq, usando `llama-3.1-8b-instant` no *free tier*):
+* **Latência Aumentada:** O tempo de resposta por query aumentou consideravelmente, pois o LLM precisava gerar mais texto (o raciocínio).
+* **Problemas com Rate Limiting:** A API da Groq (no nível gratuito) possui limites de taxa agressivos (aproximadamente 1 chamada complexa/minuto). O CoT tornava as chamadas "caras", ativando o *throttling* (fila de espera) da API e causando timeouts no nosso script de teste (`debug_runner.py`), mesmo com timeouts de cliente aumentados (120s).
+
+**Decisão Atual:**
+
+Para garantir a **estabilidade dos testes**, e manter uma **performance aceitável** dentro das limitações do *free tier* da Groq, o Chain of Thought foi **desativado**. A precisão resultante (sem CoT, mas com prompts e exemplos refinados) foi considerada **muito boa (~97-100%)** e aceitável para o contexto atual da aplicação (uso interno). A estratégia de rodar testes em lotes com pausas longas (`debug_runner.py`) provou ser eficaz para evitar novos banimentos.
+
+**Considerações Futuras:**
+
+* Se a aplicação migrar para um plano pago da API LLM com limites de taxa mais altos.
+* Se testes futuros revelarem uma queda inaceitável na precisão para casos de uso críticos.
+* Nesses cenários, a **reativação do CoT** pode ser reconsiderada como uma forma de maximizar a robustez da interpretação.
+
+---
 ## Próximas Implementações
-- [ ] 
-- [ ] 
-
+- [ ] Monitorar a frequência de erros 400 (JSON nulo) em produção para avaliar a necessidade futura de um Gatekeeper Prompt.
+- [ ] Expandir o roteiro de testes com mais casos de borda e combinações complexas.
 ---
 
 # 🧠 Funcionamento
@@ -272,3 +334,142 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
     }
     }
     ```
+
+# 💾 Componente de Banco de Dados
+
+## Stored Procedure: `SP_TK_NOTAS_AI_HOM`
+
+Representa o estágio final do fluxo de dados iniciado pela consulta do usuário. Esta Stored Procedure, localizada no diretório [`/sql`](./sql/), é a **consumidora direta** do objeto JSON gerado pelo microsserviço Intent AI.
+
+**Responsabilidades Principais:**
+
+1.  **Receber Filtros:** Aceita todos os parâmetros extraídos pela IA (datas, `TipoData`, `Cliente`, `Transportadora`, `UFDestino`, `CidadeDestino`, `Operacao`, `SituacaoNF`, `StatusAnaliseData`, `CNPJRaizTransp`, `SortColumn`, `SortDirection`) como parâmetros de entrada.
+2.  **Consulta Dinâmica:** Constrói e executa uma consulta SQL dinâmica sobre a view principal (`VW_NOTAS`), aplicando apenas os filtros que foram fornecidos (não nulos) no JSON.
+3.  **Otimização:** Utiliza uma tabela temporária (`#FilteredData`) para aplicar os filtros iniciais de forma eficiente antes de realizar JOINs mais complexos para enriquecimento de dados.
+4.  **Lógica de Negócio e Permissões:** Inclui lógicas específicas do New Tracking, como o tratamento de datas padrão ('1900-01-01'), formatação de saída e, crucialmente, a aplicação de regras de permissão de acesso baseadas no `@IdUsuario`.
+5.  **Ordenação:** Implementa a ordenação dinâmica dos resultados com base nos parâmetros `@SortColumn` e `@SortDirection`.
+
+> [!TIP]
+> **Documentação Detalhada da Procedure:**
+> A Stored Procedure `SP_TK_NOTAS_AI_HOM` possui uma lógica SQL complexa e otimizações específicas. Para uma análise aprofundada de seus parâmetros, blocos lógicos (validação, pré-filtragem, joins, permissões, ordenação), dependências (como `VW_NOTAS`) e exemplos de execução direta no banco, consulte o arquivo de documentação dedicado:
+>
+> **[`./sql/PROCEDURE_SP_TK_NOTAS_AI_HOM_DOCS.md`](./sql/PROCEDURE_SP_TK_NOTAS_AI_HOM_DOCS.md)**
+
+---
+
+# 🚀 Instalação e Configuração Local
+
+Siga os passos abaixo para configurar e executar o microsserviço `nt-ai` em seu ambiente de desenvolvimento local.
+
+## Pré-requisitos
+
+Certifique-se de ter os seguintes softwares instalados em sua máquina:
+
+* [Python](https://www.python.org/downloads/) (Versão **3.12** ou superior)
+* [Git](https://git-scm.com/downloads/)
+* Opcional, mas recomendado: [uv](https://github.com/astral-sh/uv) (um instalador e resolvedor Python extremamente rápido, compatível com `pip`)
+* Um editor de código (como [VS Code](https://code.visualstudio.com/))
+* Acesso à internet para baixar dependências e interagir com a API da Groq.
+
+## Passos de Instalação
+
+1.  **Clonar o Repositório:**
+    Abra seu terminal ou Git Bash e clone o projeto:
+    ```bash
+    git clone <URL_DO_SEU_REPOSITÓRIO_GIT>
+    cd nt-ai
+    ```
+    *(Substitua `<URL_DO_SEU_REPOSITÓRIO_GIT>` pela URL real do seu repositório)*
+
+2.  **Criar e Ativar o Ambiente Virtual:**
+    É altamente recomendado usar um ambiente virtual para isolar as dependências do projeto. Navegue até a pasta raiz do projeto (`nt-ai`) no terminal.
+
+    * **Usando `uv` (Recomendado, mais rápido):**
+        ```bash
+        # Criar o ambiente virtual com uv (já instala pip por padrão)
+        uv venv venvntai
+
+        # Ativar o ambiente virtual
+        # No Windows (PowerShell):
+        .\venvntai\Scripts\Activate.ps1
+        # No Windows (Git Bash):
+        source venvntai/Scripts/activate
+        # No macOS/Linux:
+        # source venvntai/bin/activate
+        ```
+
+    * **Alternativa com `python -m venv` (Padrão):**
+        ```bash
+        # Criar o ambiente virtual
+        python -m venv venvntai
+
+        # Ativar o ambiente virtual (mesmos comandos acima)
+        # Windows (PowerShell): .\venvntai\Scripts\Activate.ps1
+        # Windows (Git Bash): source venvntai/Scripts/activate
+        # macOS/Linux: source venvntai/bin/activate
+        ```
+    Você saberá que o ambiente está ativo pois o nome `(venvntai)` aparecerá no início do prompt do seu terminal.
+
+3.  **Instalar as Dependências:**
+    Com o ambiente virtual ativado, instale todas as bibliotecas Python necessárias listadas no arquivo `requirements.txt`.
+
+    * **Usando `uv` (Recomendado, muito mais rápido):**
+        ```bash
+        uv pip install -r requirements.txt
+        ```
+
+    * **Alternativa com `pip` (Padrão):**
+        ```bash
+        pip install -r requirements.txt
+        ```
+
+4.  **Configurar Variáveis de Ambiente:**
+    Este projeto requer uma chave de API para se comunicar com o serviço LLM da Groq.
+    * Crie um arquivo chamado `.env` na **raiz do projeto** (`nt-ai/`).
+    * Abra o arquivo `.env` e adicione a seguinte linha, substituindo `<SUA_CHAVE_API_GROQ>` pela sua chave real obtida no [Console da Groq](https://console.groq.com/keys):
+        ```env
+        GROQ_API_KEY=<SUA_CHAVE_API_GROQ>
+        ```
+    * **Importante:** Certifique-se de que o arquivo `.env` esteja listado no seu `.gitignore` para não commitar sua chave secreta no repositório Git.
+
+## Executando a Aplicação
+
+*(O restante da seção permanece igual: Iniciar o Servidor FastAPI, Verificar a Aplicação, Ferramentas de Teste)*
+
+---
+
+## Executando a Aplicação
+
+1.  **Iniciar o Servidor FastAPI:**
+    Com o ambiente virtual ainda ativado e na pasta raiz do projeto, execute o seguinte comando para iniciar o servidor web local usando Uvicorn:
+    ```bash
+    uvicorn app.main:app --reload --port 5001
+    ```
+    * `app.main:app`: Indica ao Uvicorn para encontrar a instância `app` do FastAPI dentro do arquivo `app/main.py`.
+    * `--reload`: Habilita o recarregamento automático do servidor sempre que um arquivo Python for modificado (ótimo para desenvolvimento).
+    * `--port 5001`: Define a porta em que o servidor irá rodar (você pode alterar se necessário).
+
+2.  **Verificar a Aplicação:**
+    Se tudo estiver correto, você verá mensagens no terminal indicando que o servidor Uvicorn iniciou e está escutando na `http://127.0.0.1:5001`.
+    * Abra seu navegador e acesse `http://127.0.0.1:5001/docs`. Você deverá ver a interface interativa da documentação Swagger UI/OpenAPI, onde pode explorar e testar os endpoints.
+
+## Ferramentas de Teste e Desenvolvimento
+
+Além de rodar o servidor principal, você pode usar as seguintes ferramentas:
+
+1.  **Executor de Testes em Lote (`debug_runner.py`):**
+    Use este script para rodar um conjunto de queries de um arquivo `.txt` contra o endpoint `/debug-query`. Lembre-se da estratégia de *batch throttling* para evitar problemas com a API da Groq.
+    ```bash
+    # Certifique-se de que o servidor FastAPI (uvicorn) esteja rodando em outra janela do terminal
+    python scripts/debug_runner.py tests_case/testes_mestre.txt
+    ```
+
+2.  **Interface de Teste Streamlit (`test_ui.py`):**
+    Para testes interativos individuais e visualização do fluxo da IA, execute a interface Streamlit:
+    ```bash
+    # Certifique-se de que o servidor FastAPI (uvicorn) esteja rodando em outra janela do terminal
+    streamlit run scripts/test_ui.py
+    ```
+    Isso abrirá uma nova aba no seu navegador com a interface de teste.
+
+---
