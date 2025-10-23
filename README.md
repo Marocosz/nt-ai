@@ -28,8 +28,10 @@
   - [Pré-requisitos](#pré-requisitos)
   - [Passos de Instalação](#passos-de-instalação)
   - [Executando a Aplicação](#executando-a-aplicação)
-  - [Executando a Aplicação](#executando-a-aplicação-1)
   - [Ferramentas de Teste e Desenvolvimento](#ferramentas-de-teste-e-desenvolvimento)
+- [🤝 Contato](#-contato)
+  - [Dúvidas, Bugs ou Sugestões?](#dúvidas-bugs-ou-sugestões)
+  - [Vamos nos Conectar!](#vamos-nos-conectar)
 
 ---
 
@@ -357,22 +359,28 @@ Representa o estágio final do fluxo de dados iniciado pela consulta do usuário
 > **[`./sql/PROCEDURE_SP_TK_NOTAS_AI_HOM_DOCS.md`](./sql/PROCEDURE_SP_TK_NOTAS_AI_HOM_DOCS.md)**
 
 ---
-
 # 🚀 Instalação e Configuração Local
 
-Siga os passos abaixo para configurar e executar o microsserviço `nt-ai` em seu ambiente de desenvolvimento local.
+> Siga os passos detalhados abaixo para configurar e executar o microsserviço `nt-ai` em seu ambiente de desenvolvimento local, desde os pré-requisitos até a execução dos testes.
 
 ## Pré-requisitos
 
-Certifique-se de ter os seguintes softwares instalados em sua máquina:
+Antes de começar, garanta que seu sistema possui as ferramentas essenciais para clonar, configurar e executar o projeto:
 
-* [Python](https://www.python.org/downloads/) (Versão **3.12** ou superior)
+* [Python](https://www.python.org/downloads/) (Versão **3.12**)
 * [Git](https://git-scm.com/downloads/)
-* Opcional, mas recomendado: [uv](https://github.com/astral-sh/uv) (um instalador e resolvedor Python extremamente rápido, compatível com `pip`)
+* Opcional, mas **altamente recomendado:** [uv](https://github.com/astral-sh/uv) (um gerenciador de pacotes e ambientes virtuais Python extremamente rápido).
+
+    > [!TIP]
+    > **O que é `uv`?**
+    > `uv` é uma ferramenta moderna desenvolvida pela Astral (a mesma equipe por trás do Ruff linter) que visa substituir `pip`, `venv`, `pip-tools` e outros, oferecendo uma experiência unificada e significativamente mais rápida para gerenciamento de dependências e ambientes virtuais em Python. Os comandos neste guia mostrarão a opção com `uv` (preferencial) e a alternativa padrão com `pip`/`venv`.
+
 * Um editor de código (como [VS Code](https://code.visualstudio.com/))
 * Acesso à internet para baixar dependências e interagir com a API da Groq.
 
 ## Passos de Instalação
+
+> Siga esta sequência para baixar o código, configurar o ambiente isolado e instalar todas as bibliotecas necessárias.
 
 1.  **Clonar o Repositório:**
     Abra seu terminal ou Git Bash e clone o projeto:
@@ -383,11 +391,11 @@ Certifique-se de ter os seguintes softwares instalados em sua máquina:
     *(Substitua `<URL_DO_SEU_REPOSITÓRIO_GIT>` pela URL real do seu repositório)*
 
 2.  **Criar e Ativar o Ambiente Virtual:**
-    É altamente recomendado usar um ambiente virtual para isolar as dependências do projeto. Navegue até a pasta raiz do projeto (`nt-ai`) no terminal.
+    É crucial usar um ambiente virtual para isolar as dependências. Navegue até a pasta raiz do projeto (`nt-ai`) no terminal.
 
-    * **Usando `uv` (Recomendado, mais rápido):**
+    * **Usando `uv` (Recomendado):**
         ```bash
-        # Criar o ambiente virtual com uv (já instala pip por padrão)
+        # Criar o ambiente virtual (muito rápido)
         uv venv venvntai
 
         # Ativar o ambiente virtual
@@ -412,7 +420,7 @@ Certifique-se de ter os seguintes softwares instalados em sua máquina:
     Você saberá que o ambiente está ativo pois o nome `(venvntai)` aparecerá no início do prompt do seu terminal.
 
 3.  **Instalar as Dependências:**
-    Com o ambiente virtual ativado, instale todas as bibliotecas Python necessárias listadas no arquivo `requirements.txt`.
+    Com o ambiente virtual ativado, instale as bibliotecas listadas no `requirements.txt`.
 
     * **Usando `uv` (Recomendado, muito mais rápido):**
         ```bash
@@ -425,52 +433,70 @@ Certifique-se de ter os seguintes softwares instalados em sua máquina:
         ```
 
 4.  **Configurar Variáveis de Ambiente:**
-    Este projeto requer uma chave de API para se comunicar com o serviço LLM da Groq.
+    Este projeto precisa de uma chave de API para o serviço LLM da Groq.
     * Crie um arquivo chamado `.env` na **raiz do projeto** (`nt-ai/`).
-    * Abra o arquivo `.env` e adicione a seguinte linha, substituindo `<SUA_CHAVE_API_GROQ>` pela sua chave real obtida no [Console da Groq](https://console.groq.com/keys):
+    * Abra o arquivo `.env` e adicione a linha abaixo, inserindo sua chave real obtida no [Console da Groq](https://console.groq.com/keys):
         ```env
         GROQ_API_KEY=<SUA_CHAVE_API_GROQ>
         ```
-    * **Importante:** Certifique-se de que o arquivo `.env` esteja listado no seu `.gitignore` para não commitar sua chave secreta no repositório Git.
+    * **Importante:** Adicione `.env` ao seu arquivo `.gitignore` para evitar commitar acidentalmente sua chave secreta.
 
 ## Executando a Aplicação
 
-*(O restante da seção permanece igual: Iniciar o Servidor FastAPI, Verificar a Aplicação, Ferramentas de Teste)*
-
----
-
-## Executando a Aplicação
+> Com o ambiente configurado, veja como iniciar o servidor da API e verificar se ele está funcionando corretamente.
 
 1.  **Iniciar o Servidor FastAPI:**
-    Com o ambiente virtual ainda ativado e na pasta raiz do projeto, execute o seguinte comando para iniciar o servidor web local usando Uvicorn:
+    No terminal, com o ambiente virtual ativado e na pasta raiz do projeto, execute:
     ```bash
     uvicorn app.main:app --reload --port 5001
     ```
-    * `app.main:app`: Indica ao Uvicorn para encontrar a instância `app` do FastAPI dentro do arquivo `app/main.py`.
-    * `--reload`: Habilita o recarregamento automático do servidor sempre que um arquivo Python for modificado (ótimo para desenvolvimento).
-    * `--port 5001`: Define a porta em que o servidor irá rodar (você pode alterar se necessário).
+    * `app.main:app`: Aponta para a instância `app` do FastAPI no arquivo `app/main.py`.
+    * `--reload`: Reinicia o servidor automaticamente ao salvar alterações no código (ideal para desenvolvimento).
+    * `--port 5001`: Define a porta de execução (ajuste se necessário).
 
 2.  **Verificar a Aplicação:**
-    Se tudo estiver correto, você verá mensagens no terminal indicando que o servidor Uvicorn iniciou e está escutando na `http://127.0.0.1:5001`.
-    * Abra seu navegador e acesse `http://127.0.0.1:5001/docs`. Você deverá ver a interface interativa da documentação Swagger UI/OpenAPI, onde pode explorar e testar os endpoints.
+    O terminal mostrará logs indicando que o servidor está rodando em `http://127.0.0.1:5001`.
+    * Abra `http://127.0.0.1:5001/docs` no seu navegador para acessar a documentação interativa (Swagger UI) e testar os endpoints diretamente.
 
 ## Ferramentas de Teste e Desenvolvimento
 
-Além de rodar o servidor principal, você pode usar as seguintes ferramentas:
+>>> Além do servidor principal, utilize estas ferramentas auxiliares para validar e depurar o comportamento da IA.
 
 1.  **Executor de Testes em Lote (`debug_runner.py`):**
-    Use este script para rodar um conjunto de queries de um arquivo `.txt` contra o endpoint `/debug-query`. Lembre-se da estratégia de *batch throttling* para evitar problemas com a API da Groq.
+    Roda um conjunto de queries de um arquivo `.txt` (como `testes_mestre.txt`) contra o endpoint `/debug-query`, aplicando pausas para evitar problemas com a API da Groq.
     ```bash
-    # Certifique-se de que o servidor FastAPI (uvicorn) esteja rodando em outra janela do terminal
-    python scripts/debug_runner.py testes.txt
+    # Mantenha o servidor FastAPI (uvicorn) rodando em outro terminal
+    python scripts/debug_runner.py tests_case/testes_mestre.txt
     ```
+    *(Use o nome correto do seu arquivo de testes)*
 
 2.  **Interface de Teste Streamlit (`test_ui.py`):**
-    Para testes interativos individuais e visualização do fluxo da IA, execute a interface Streamlit:
+    Oferece uma interface web interativa para testes rápidos individuais e visualização do fluxo da IA.
     ```bash
-    # Certifique-se de que o servidor FastAPI (uvicorn) esteja rodando em outra janela do terminal
+    # Mantenha o servidor FastAPI (uvicorn) rodando em outro terminal
     streamlit run scripts/test_ui.py
     ```
-    Isso abrirá uma nova aba no seu navegador com a interface de teste.
+    A interface será aberta automaticamente no seu navegador padrão.
 
 ---
+
+# 🤝 Contato
+
+## Dúvidas, Bugs ou Sugestões?
+
+Se você encontrar algum bug, tiver alguma dúvida técnica sobre o código ou uma sugestão de melhoria, a melhor forma de entrar em contato é **abrindo uma Issue** diretamente no repositório do GitHub. Isso ajuda a manter tudo organizado e visível para todos.
+
+- **[➡️ Abrir uma Issue no GitHub](https://github.com/Marocosz/nt-ai/issues)**
+
+---
+
+## Vamos nos Conectar!
+
+Adoraria ouvir seu feedback e me conectar com outros desenvolvedores e entusiastas de tecnologia. Você pode me encontrar nas seguintes plataformas:
+
+- **Desenvolvido por:** `Marcos Rodrigues`
+- 💼 **LinkedIn:** [`https://www.linkedin.com/in/marcosrodriguesptc`](https://www.linkedin.com/in/marcosrodriguesptc/)
+- 🐙 **GitHub:** [`https://github.com/Marocosz`](https://github.com/Marocosz)
+- 📧 **Email:** `marcosrodriguesepro@gmail.com`
+
+Sinta-se à vontade para se conectar!
