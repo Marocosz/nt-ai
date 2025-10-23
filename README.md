@@ -385,10 +385,9 @@ Antes de começar, garanta que seu sistema possui as ferramentas essenciais para
 1.  **Clonar o Repositório:**
     Abra seu terminal ou Git Bash e clone o projeto:
     ```bash
-    git clone <URL_DO_SEU_REPOSITÓRIO_GIT>
+    git clone https://github.com/Marocosz/nt-ai
     cd nt-ai
     ```
-    *(Substitua `<URL_DO_SEU_REPOSITÓRIO_GIT>` pela URL real do seu repositório)*
 
 2.  **Criar e Ativar o Ambiente Virtual:**
     É crucial usar um ambiente virtual para isolar as dependências. Navegue até a pasta raiz do projeto (`nt-ai`) no terminal.
