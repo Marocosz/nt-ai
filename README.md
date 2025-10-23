@@ -371,9 +371,9 @@ Antes de começar, garanta que seu sistema possui as ferramentas essenciais para
 * [Git](https://git-scm.com/downloads/)
 * Opcional, mas **altamente recomendado:** [uv](https://github.com/astral-sh/uv) (um gerenciador de pacotes e ambientes virtuais Python extremamente rápido).
 
-    > [!TIP]
-    > **O que é `uv`?**
-    > `uv` é uma ferramenta moderna desenvolvida pela Astral (a mesma equipe por trás do Ruff linter) que visa substituir `pip`, `venv`, `pip-tools` e outros, oferecendo uma experiência unificada e significativamente mais rápida para gerenciamento de dependências e ambientes virtuais em Python. Os comandos neste guia mostrarão a opção com `uv` (preferencial) e a alternativa padrão com `pip`/`venv`.
+> [!TIP]
+> **O que é `uv`?**
+> `uv` é uma ferramenta moderna desenvolvida pela Astral (a mesma equipe por trás do Ruff linter) que visa substituir `pip`, `venv`, `pip-tools` e outros, oferecendo uma experiência unificada e significativamente mais rápida para gerenciamento de dependências e ambientes virtuais em Python. Os comandos neste guia mostrarão a opção com `uv` (preferencial) e a alternativa padrão com `pip`/`venv`.
 
 * Um editor de código (como [VS Code](https://code.visualstudio.com/))
 * Acesso à internet para baixar dependências e interagir com a API da Groq.
@@ -460,7 +460,7 @@ Antes de começar, garanta que seu sistema possui as ferramentas essenciais para
 
 ## Ferramentas de Teste e Desenvolvimento
 
->>> Além do servidor principal, utilize estas ferramentas auxiliares para validar e depurar o comportamento da IA.
+> Além do servidor principal, utilize estas ferramentas auxiliares para validar e depurar o comportamento da IA.
 
 1.  **Executor de Testes em Lote (`debug_runner.py`):**
     Roda um conjunto de queries de um arquivo `.txt` (como `testes_mestre.txt`) contra o endpoint `/debug-query`, aplicando pausas para evitar problemas com a API da Groq.
