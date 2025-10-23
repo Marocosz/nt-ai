@@ -17,8 +17,8 @@
   - [`app/main.py`](#appmainpy)
   - [`app/chains/master_chain.py`](#appchainsmaster_chainpy)
   - [`app/prompts/filter_prompts.py`](#apppromptsfilter_promptspy)
-- [Outros Módulos e Ferramentas de Suporte](#outros-módulos-e-ferramentas-de-suporte)
-- [Endpoints](#endpoints)
+- [🧩 Outros Módulos e Ferramentas de Suporte](#-outros-módulos-e-ferramentas-de-suporte)
+- [🌐 Endpoints](#-endpoints)
   - [**1. Endpoint de Produção**](#1-endpoint-de-produção)
     - [**Endpoint:** `POST /parse-query`](#endpoint-post-parse-query)
   - [**2. Endpoint de Debug**](#2-endpoint-de-debug)
@@ -248,7 +248,7 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
     - Utiliza uma extensa lista de exemplos (Few-Shot Learning) para ensinar à IA o comportamento esperado em cenários complexos, como filtros combinados com ordenação.
 
 
-# Outros Módulos e Ferramentas de Suporte
+# 🧩 Outros Módulos e Ferramentas de Suporte
 
 > Além dos arquivos centrais que definem a lógica da IA, o projeto conta com outros módulos de suporte e ferramentas de desenvolvimento. Cada um desses arquivos possui sua própria documentação interna detalhada para explicar seu funcionamento.
 
@@ -263,7 +263,7 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
 - `tests_case/:` Armazena os arquivos .txt que contêm as frases em linguagem natural usadas como entrada para os testes de integração, servindo como a "fonte da verdade" para validar o comportamento da IA.
 
 
-# Endpoints
+# 🌐 Endpoints
 
 > Esta seção detalha os endpoints que sua API expõe, o que é crucial para a equipe que irá consumir seu microsserviço.
 
