@@ -21,6 +21,7 @@
 - [Endpoints](#endpoints)
   - [**1. Endpoint de Produção**](#1-endpoint-de-produção)
     - [**Endpoint:** `POST /parse-query`](#endpoint-post-parse-query)
+  - [**2. Endpoint de Debug**](#2-endpoint-de-debug)
     - [**Endpoint:** `POST /debug-query`](#endpoint-post-debug-query)
 - [💾 Componente de Banco de Dados](#-componente-de-banco-de-dados)
   - [Stored Procedure: `SP_TK_NOTAS_AI_HOM`](#stored-procedure-sp_tk_notas_ai_hom)
@@ -81,6 +82,7 @@ Para fins de desenvolvimento, depuração e demonstração, o repositório cont�
 │   │   └── 🐍 filter_prompts.py
 │   ├── 🐍 __init__.py
 │   └── 🐍 main.py
+├── 📁 logs/
 ├── 📁 scripts
 │   ├── 🐍 debug_runner.py
 │   └── 🐍 test_ui.py
@@ -268,73 +270,96 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
 
 ### **Endpoint:** `POST /parse-query`
 
-**Descrição:** Recebe uma query em linguagem natural e retorna apenas o objeto JSON final com os filtros extraídos. Este é o endpoint que deve ser consumido pela aplicação principal.
-  
-- **Request Body:**
-  ```json
-  {
-    "query": "notas entregues hoje para o cliente BEXX"
-  }
-- **Success Response (200 OK)**
-    ```
+**Descrição:** Recebe uma query em linguagem natural e retorna apenas o objeto JSON final com os filtros extraídos OU um erro 400 se a query for inválida/vaga. Este é o endpoint que deve ser consumido pela aplicação principal.
+
+* **Request Body:**
+    ```json
     {
-    "NF":NULL
-    "DE":"2025-10-17"
-    "ATE":"2025-10-17"
-    "TipoData":"2"
-    "Cliente":"BEXX"
-    "Transportadora":NULL
-    "UFDestino":NULL
-    "CidadeDestino":NULL
-    "Operacao":NULL
-    "SituacaoNF":NULL
-    "StatusAnaliseData":NULL
-    "CNPJRaizTransp":NULL
-    "SortColumn":NULL
-    "SortDirection":NULL
+      "query": "notas entregues hoje para o cliente BEXX"
     }
     ```
+* **Success Response (200 OK):**
+    ```json
+    {
+      "NF": null,
+      "DE": "2025-10-23", // Data do dia da requisição
+      "ATE": "2025-10-23", // Data do dia da requisição
+      "TipoData": "2",
+      "Cliente": "BEXX",
+      "Transportadora": null,
+      "UFDestino": null,
+      "CidadeDestino": null,
+      "Operacao": null,
+      "SituacaoNF": null,
+      "StatusAnaliseData": null,
+      "CNPJRaizTransp": null,
+      "SortColumn": null,
+      "SortDirection": null
+    }
+    ```
+* **Error Response (400 Bad Request):** _(Retornado se a query for vazia, vaga ou irrelevante)_
+    ```json
+    {
+      "detail": "A consulta fornecida é muito vaga, irrelevante ou não pôde ser interpretada. Por favor, seja mais específico."
+    }
+    ```
+    *Ou, se a query enviada estiver vazia:*
+    ```json
+    {
+      "detail": "A 'query' não pode ser vazia."
+    }
+    ```
+
+## **2. Endpoint de Debug**
+
 ### **Endpoint:** `POST /debug-query`
 
-**Descrição:** Endpoint para desenvolvimento e diagnóstico. Retorna um objeto JSON contendo os resultados de cada etapa da cadeia de IA.
-  
-- **Request Body:**
-  ```json
-  {
-    "query": "notas entregues hoje para o cliente BEXX"
-  }
-- **Success Response (200 OK)**
-    ```
+**Descrição:** Endpoint para desenvolvimento e diagnóstico. Retorna um objeto JSON contendo os resultados intermediários da cadeia de IA OU um erro 400 se a query for inválida/vaga (JSON final seria nulo).
+
+* **Request Body:**
+    ```json
     {
-    "query": "notas entregues hoje para o cliente BEXX",
-    "dates": {
-        "today": "2025-10-17",
-        "yesterday": "2025-10-16",
-        "last_week_start": "2025-10-10",
-        "week_start": "2025-10-13",
-        "week_end": "2025-10-19",
-        "month_start": "2025-10-01",
-        "month_end": "2025-10-31",
-        "semester_start": "2025-07-01",
-        "semester_end": "2025-12-31"
-    },
-    "enhanced_query": "Quais notas fiscais foram entregues hoje para o cliente BEXX?",
-    "parsed_json": {
-        "NF": null,
-        "DE": "2025-10-17",
-        "ATE": "2025-10-17",
-        "TipoData": "2",
-        "Cliente": "BEXX",
-        "Transportadora": null,
-        "UFDestino": null,
-        "CidadeDestino": null,
-        "Operacao": null,
-        "SituacaoNF": null,
-        "StatusAnaliseData": null,
-        "CNPJRaizTransp": null,
-        "SortColumn": null,
-        "SortDirection": null
+      "query": "notas entregues hoje para o cliente BEXX"
     }
+    ```
+* **Success Response (200 OK):**
+    ```json
+    {
+      "query": "notas entregues hoje para o cliente BEXX",
+      "dates": {
+          "today": "2025-10-23", // Data do dia da requisição
+          "yesterday": "2025-10-22", // Data do dia anterior
+          // ... outras datas calculadas ...
+      },
+      "enhanced_query": "Quais notas fiscais foram entregues hoje para o cliente BEXX?",
+      "parsed_json": {
+          "NF": null,
+          "DE": "2025-10-23", // Data do dia da requisição
+          "ATE": "2025-10-23", // Data do dia da requisição
+          "TipoData": "2",
+          "Cliente": "BEXX",
+          "Transportadora": null,
+          "UFDestino": null,
+          "CidadeDestino": null,
+          "Operacao": null,
+          "SituacaoNF": null,
+          "StatusAnaliseData": null,
+          "CNPJRaizTransp": null,
+          "SortColumn": null,
+          "SortDirection": null
+      }
+    }
+    ```
+* **Error Response (400 Bad Request):** _(Retornado se a query for vazia, vaga ou irrelevante)_
+    ```json
+    {
+      "detail": "A consulta fornecida é muito vaga, irrelevante ou não pôde ser interpretada (JSON final seria nulo)."
+    }
+    ```
+    *Ou, se a query enviada estiver vazia:*
+    ```json
+    {
+      "detail": "A 'query' não pode ser vazia."
     }
     ```
 
@@ -462,10 +487,10 @@ Antes de começar, garanta que seu sistema possui as ferramentas essenciais para
 > Além do servidor principal, utilize estas ferramentas auxiliares para validar e depurar o comportamento da IA.
 
 1.  **Executor de Testes em Lote (`debug_runner.py`):**
-    Roda um conjunto de queries de um arquivo `.txt` (como `testes_mestre.txt`) contra o endpoint `/debug-query`, aplicando pausas para evitar problemas com a API da Groq.
+    Roda um conjunto de queries de um arquivo `.txt` (como `testes.txt`) contra o endpoint `/debug-query`, aplicando pausas para evitar problemas com a API da Groq.
     ```bash
     # Mantenha o servidor FastAPI (uvicorn) rodando em outro terminal
-    python scripts/debug_runner.py tests_case/testes_mestre.txt
+    python scripts/debug_runner.py testes.txt
     ```
     *(Use o nome correto do seu arquivo de testes)*
 
