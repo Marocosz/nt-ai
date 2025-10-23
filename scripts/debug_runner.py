@@ -34,7 +34,7 @@
 #    - para evitar o banimento da API por "uso abusivo".
 #
 # Como Usar:
-# > python scripts/debug_runner.py testes_finais_cobertura_total.txt
+# > python scripts/debug_runner.py testes.txt
 #
 # =================================================================================================
 # =================================================================================================

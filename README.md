@@ -462,7 +462,7 @@ Além de rodar o servidor principal, você pode usar as seguintes ferramentas:
     Use este script para rodar um conjunto de queries de um arquivo `.txt` contra o endpoint `/debug-query`. Lembre-se da estratégia de *batch throttling* para evitar problemas com a API da Groq.
     ```bash
     # Certifique-se de que o servidor FastAPI (uvicorn) esteja rodando em outra janela do terminal
-    python scripts/debug_runner.py tests_case/testes_mestre.txt
+    python scripts/debug_runner.py testes.txt
     ```
 
 2.  **Interface de Teste Streamlit (`test_ui.py`):**
