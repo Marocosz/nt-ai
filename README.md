@@ -282,8 +282,8 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
     ```json
     {
       "NF": null,
-      "DE": "2025-10-23", // Data do dia da requisição
-      "ATE": "2025-10-23", // Data do dia da requisição
+      "DE": "2025-10-23",
+      "ATE": "2025-10-23",
       "TipoData": "2",
       "Cliente": "BEXX",
       "Transportadora": null,
@@ -327,15 +327,22 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
     {
       "query": "notas entregues hoje para o cliente BEXX",
       "dates": {
-          "today": "2025-10-23", // Data do dia da requisição
-          "yesterday": "2025-10-22", // Data do dia anterior
-          // ... outras datas calculadas ...
+          "today": "2025-10-23",
+          "yesterday": "2025-10-22",
+          "last_week_start": "2025-10-13",
+          "last_week_end": "2025-10-19",
+          "week_start": "2025-10-20",
+          "week_end": "2025-10-26",
+          "month_start": "2025-10-01",
+          "month_end": "2025-10-31",
+          "semester_start": "2025-07-01",
+          "semester_end": "2025-12-31"
       },
       "enhanced_query": "Quais notas fiscais foram entregues hoje para o cliente BEXX?",
       "parsed_json": {
           "NF": null,
-          "DE": "2025-10-23", // Data do dia da requisição
-          "ATE": "2025-10-23", // Data do dia da requisição
+          "DE": "2025-10-23",
+          "ATE": "2025-10-23",
           "TipoData": "2",
           "Cliente": "BEXX",
           "Transportadora": null,
