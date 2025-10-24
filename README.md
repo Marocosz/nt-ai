@@ -45,6 +45,7 @@
 - [Pydantic](https://docs.pydantic.dev/latest/)
 - [Git](https://git-scm.com/)
 - [Modelo LLM - llama-3.1-8b-instant (GROQ)](https://groq.com/)
+- [Modelo LLM - Gemini-2.5-flash](https://ai.google.dev/gemini-api/docs/models)
 
 ---
 

@@ -38,7 +38,7 @@ import re # [!] ATENÇÃO: Importado para a função _extract_json_from_output (
 from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda # [!] RunnableLambda importado para CoT, atualmente desativado.
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain.output_parsers import OutputFixingParser
-from app.core.llm import get_llm
+from app.core.llm import get_llm_groq, get_llm_google
 from app.prompts.filter_prompts import QUERY_ENHANCER_PROMPT, JSON_PARSER_PROMPT
 from datetime import datetime, timedelta
 
@@ -121,7 +121,8 @@ def _create_chains():
     Função "fábrica" auxiliar para construir e configurar os componentes base das cadeias.
     Esta função é chamada uma vez na inicialização para criar os objetos reutilizáveis.
     """
-    llm = get_llm()
+    llm = get_llm_google()
+    # llm = get_llm_groq()
     
     # --- Definição da Cadeia de Normalização (Enhancer) ---
     query_enhancer_chain = QUERY_ENHANCER_PROMPT | llm | StrOutputParser()
