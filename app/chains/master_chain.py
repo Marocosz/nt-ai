@@ -33,14 +33,19 @@
 # =================================================================================================
 # =================================================================================================
 
+import time 
+import logging
 import calendar
 import re # [!] ATENÇÃO: Importado para a função _extract_json_from_output (CoT), atualmente desativada.
-from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda # [!] RunnableLambda importado para CoT, atualmente desativado.
+from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda # [!] RunnableLambda agora é usado para timing
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain.output_parsers import OutputFixingParser
-from app.core.llm import get_llm_groq, get_llm_google
+from app.core.llm import get_llm_google, get_llm_groq, get_llm
 from app.prompts.filter_prompts import QUERY_ENHANCER_PROMPT, JSON_PARSER_PROMPT
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
+
 
 def _get_current_dates(data_passthrough):
     """
@@ -73,7 +78,7 @@ def _get_current_dates(data_passthrough):
     return {
         "today": today.strftime('%Y-%m-%d'),
         "yesterday": (today - timedelta(days=1)).strftime('%Y-%m-%d'),
-        
+
         # "last_week_start" agora se refere ao início da semana de calendário passada.
         "last_week_start": start_of_last_week.strftime('%Y-%m-%d'),
         "last_week_end": end_of_last_week.strftime('%Y-%m-%d'),
@@ -96,24 +101,33 @@ def _extract_json_from_output(llm_output: str) -> str:
     """
     # Divide a saída pelo marcador "JSON FINAL", ignorando maiúsculas/minúsculas e espaços
     parts = re.split(r'JSON FINAL\s*:?', llm_output, flags=re.IGNORECASE)
-    
+
     json_part_to_parse = llm_output # Por padrão, tenta parsear a saída inteira
 
     if len(parts) > 1:
         # Se o marcador foi encontrado, pega a última parte, que deve ser o JSON
         json_part_to_parse = parts[-1]
-    
+
     # Tenta encontrar o primeiro JSON válido (iniciando com { e terminando com })
     match = re.search(r'\{.*\}', json_part_to_parse, re.DOTALL)
-    
+
     if match:
         # Retorna o JSON encontrado
         return match.group(0)
-    
+
     # Se nenhum JSON for encontrado (ex: erro do LLM ou formato inesperado),
     # retorna um JSON vazio para o OutputFixingParser tentar corrigir.
     return "{}"
-# --- Fim do Bloco de Funções Auxiliares (Desativado) ---
+# --- Fim do Bloco de Funções Auxiliares (CoT Desativado) ---
+
+
+def log_llm_call_time(step_name: str, start_time: float, result: any):
+    """
+    Calcula a duração, loga o tempo da chamada LLM e retorna o resultado original.
+    """
+    duration = time.time() - start_time
+    logger.info(f"TIMING: Chamada LLM '{step_name}' levou {duration:.2f} segundos.")
+    return result # Retorna o resultado da chamada LLM para continuar a cadeia
 
 
 def _create_chains():
@@ -121,41 +135,45 @@ def _create_chains():
     Função "fábrica" auxiliar para construir e configurar os componentes base das cadeias.
     Esta função é chamada uma vez na inicialização para criar os objetos reutilizáveis.
     """
-    llm = get_llm_google()
-    # llm = get_llm_groq()
-    
-    # --- Definição da Cadeia de Normalização (Enhancer) ---
-    query_enhancer_chain = QUERY_ENHANCER_PROMPT | llm | StrOutputParser()
-    
-    # --- Definição da Cadeia de Parsing com Auto-Correção ---
-    # O OutputFixingParser é usado para tentar corrigir/validar a saída do LLM como JSON.
-    output_fixing_parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
-    
-    # ==================================================================
-    # --- CONFIGURAÇÃO DA CADEIA DE PARSING ---
-    # ==================================================================
-    #
-    # Fluxo Atual (CoT Desativado):
-    # 1. `JSON_PARSER_PROMPT | llm`: O prompt é enviado ao LLM.
-    # 2. `| StrOutputParser()`: A saída (esperada como string JSON) é capturada.
-    # 3. `| output_fixing_parser`: O parser tenta corrigir e validar o JSON.
-    #
-    # Fluxo Anterior (CoT Ativado - linha comentada abaixo):
-    # O CoT gerava "Pensamento + JSON FINAL:", exigindo um passo extra (`RunnableLambda`)
-    # para extrair o JSON antes de passar ao `output_fixing_parser`.
-    # Foi desativado devido a performance/rate limits (ver função _extract_json_from_output).
-    #
-    json_parser_chain = (
-        JSON_PARSER_PROMPT
-        | llm
-        | StrOutputParser() # Captura a saída do LLM como string
-        # | RunnableLambda(_extract_json_from_output)  # [CoT DESATIVADO] Extrairia o JSON do "Pensamento"
-        | output_fixing_parser # Tenta parsear/corrigir o JSON
+    llm = get_llm() # Chama a função principal de llm.py (que agora usa Google)
+
+    # --- Definição da Cadeia de Normalização (Enhancer) com Timing ---
+    # Passo 1: Prepara o prompt e o LLM
+    enhancer_prompt_llm = QUERY_ENHANCER_PROMPT | llm
+
+    query_enhancer_chain = (
+        # Passo A: Captura o tempo inicial ANTES da chamada LLM
+        RunnablePassthrough.assign(start_time=lambda x: time.time())
+        # Passo B: Executa a chamada LLM principal (Prompt + LLM)
+        #          Precisamos passar o input original E o start_time para o próximo passo
+        .assign(llm_output=lambda x: enhancer_prompt_llm.invoke(x))
+        # Passo C: Loga o tempo e retorna APENAS a saída do LLM
+        | RunnableLambda(lambda x: log_llm_call_time("Enhancer", x['start_time'], x['llm_output']))
+        # Passo D: Aplica o parser final (StrOutputParser)
+        | StrOutputParser()
     )
-    # ==================================================================
-    # --- FIM DA CONFIGURAÇÃO ---
-    # ==================================================================
-    
+
+    # --- Definição da Cadeia de Parsing com Auto-Correção ---
+    output_fixing_parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
+
+    # Passo 1 (Parser): Prepara o prompt e o LLM principal
+    parser_prompt_llm = JSON_PARSER_PROMPT | llm
+
+    json_parser_chain = (
+        # Passo A (Parser): Captura o tempo inicial ANTES da chamada LLM principal
+        RunnablePassthrough.assign(start_time=lambda x: time.time())
+        # Passo B (Parser): Executa a chamada LLM principal (Prompt + LLM)
+        .assign(llm_output_str=lambda x: parser_prompt_llm.invoke(x) | StrOutputParser()) # Garante que a saída é string
+        # Passo C (Parser): Loga o tempo e retorna APENAS a string de saída do LLM
+        | RunnableLambda(lambda x: log_llm_call_time("Parser", x['start_time'], x['llm_output_str']))
+        # [CoT DESATIVADO] - A linha abaixo seria necessária se CoT estivesse ativo
+        # | RunnableLambda(_extract_json_from_output)
+        # Passo D (Parser): Passa a string (idealmente JSON) para o OutputFixingParser
+        # [!] ATENÇÃO: O tempo gasto DENTRO do OutputFixingParser (se ele precisar chamar o LLM de novo)
+        # NÃO será capturado por este log 'Parser'.
+        | output_fixing_parser
+    )
+
     return query_enhancer_chain, json_parser_chain
 
 
@@ -166,14 +184,14 @@ def create_master_chain() -> Runnable:
     execução, passando pela normalização e pelo parsing, e retornando o JSON final.
     """
     query_enhancer_chain, json_parser_chain = _create_chains()
-    
+
     # A linha de montagem:
     # 1. RunnablePassthrough.assign(dates=...): Calcula as datas atuais e adiciona ao fluxo.
-    # 2. .assign(enhanced_query=...): Passa o fluxo (query + datas) para o Enhancer
+    # 2. .assign(enhanced_query=...): Passa o fluxo (query + datas) para o Enhancer (com timing)
     #    e adiciona o resultado como 'enhanced_query'.
     # 3. | (lambda...): Reorganiza o dicionário para preparar a entrada do Parser,
     #    colocando 'dates' e 'enhanced_query' no nível raiz.
-    # 4. | json_parser_chain: Passa o dicionário preparado para a cadeia de parsing,
+    # 4. | json_parser_chain: Passa o dicionário preparado para a cadeia de parsing (com timing),
     #    que gera o JSON final.
     master_chain = (
         RunnablePassthrough.assign(dates=_get_current_dates)
@@ -190,21 +208,23 @@ def create_debug_chain() -> Runnable:
     Cria a cadeia de DEBUG.
     Funciona de forma idêntica à master_chain, mas retorna os resultados de cada
     passo intermediário ('dates', 'enhanced_query', 'parsed_json') para facilitar a depuração.
+    Inclui o timing das chamadas LLM.
     """
     query_enhancer_chain, json_parser_chain = _create_chains()
-    
+
     # Prepara o passo de transformação de dados para o parser (idêntico ao master_chain)
     debug_parser_input = (lambda x: {**x["dates"], "enhanced_query": x["enhanced_query"]})
-    
+
     # A linha de montagem de debug:
     # Executa os mesmos passos do master_chain, mas usa .assign() extra
     # para preservar os resultados intermediários ('dates', 'enhanced_query')
     # e adicionar o resultado final do parser sob a chave 'parsed_json'.
+    # O timing já está embutido nas cadeias base criadas por _create_chains().
     debug_chain = (
         RunnablePassthrough.assign(dates=_get_current_dates) # Passo 1: Calcula datas
         .assign(
-            enhanced_query=query_enhancer_chain # Passo 2: Roda o Enhancer
-        ).assign( # Passo 3 & 4 combinados: Prepara input, Roda Parser e guarda resultado
+            enhanced_query=query_enhancer_chain # Passo 2: Roda o Enhancer (com timing)
+        ).assign( # Passo 3 & 4 combinados: Prepara input, Roda Parser (com timing) e guarda resultado
             parsed_json = debug_parser_input | json_parser_chain
         )
     )
@@ -219,7 +239,7 @@ def create_debug_chain() -> Runnable:
 # Fluxo Detalhado:
 #   1. Recebe a pergunta do usuário (ex: "notas rodando").
 #   2. Monta o QUERY_ENHANCER_PROMPT com a pergunta.
-#   3. Envia para o LLM, que traduz para os termos de negócio (ex: "notas em trânsito").
+#   3. (Timing Inicia) Envia para o LLM, que traduz para os termos de negócio (ex: "notas em trânsito"). (Timing Termina)
 #   4. O StrOutputParser garante que a saída seja uma string de texto limpa.
 # Exemplo de Entrada:
 #   { "query": "notas rodando ordenadas pelo mais caro", "dates": { ... } }
@@ -234,13 +254,13 @@ def create_debug_chain() -> Runnable:
 #   1. Recebe o dicionário completo com a pergunta normalizada ('enhanced_query') e todas as datas.
 #   2. O JSON_PARSER_PROMPT usa as chaves do dicionário para preencher todas as suas
 #      variáveis (ex: {today}, {week_start}, {enhanced_query}).
-#   3. Envia para o LLM, que gera uma string (idealmente formatada como JSON).
+#   3. (Timing Inicia) Envia para o LLM, que gera uma string (idealmente formatada como JSON). (Timing Termina)
 #   4. O StrOutputParser captura essa string de saída.
 #   5. O OutputFixingParser tenta parsear a string como JSON. Se falhar, ele pede ao LLM
-#      para corrigir a sintaxe e tenta parsear novamente.
+#      (internamente, sem timing explícito aqui) para corrigir a sintaxe e tenta parsear novamente.
 # Exemplo de Entrada:
 #   {
-#     "today": "2025-10-22", "last_week_start": "2025-10-13", ...
+#     "today": "2025-10-27", "last_week_start": "2025-10-20", ...
 #     "enhanced_query": "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
 #   }
 # Exemplo de Saída (objeto Python após parsing):
