@@ -17,16 +17,19 @@
 # 2. Execução em Loop com Retentativas (A Lógica Principal):
 #    - Itera sobre cada query. Para cada query, ele entra em um loop de "tentativa infinita".
 #    - Ele SÓ passará para a próxima query (ex: Teste #2) após o teste atual
-#      (ex: Teste #1) ser concluído com um `status_code == 200`.
+#      (ex: Teste #1) ser concluído com um `status_code == 200` OU receber um erro 4xx (cliente).
+#    - Ele TENTARÁ NOVAMENTE apenas em caso de erros 5xx (servidor) ou falhas de conexão/timeout.
 #
 # 3. Tratamento de Erros de Conexão e Timeout:
 #    - Se o script não conseguir conectar ao microsserviço ou se a requisição estourar
 #      o `timeout` (uma `RequestException`), ele imprimirá o erro, aguardará o
 #      `RETRY_DELAY` (ex: 60 segundos) e tentará a *mesma query* novamente.
 #
-# 4. Tratamento de Erros de API (Rate Limiting, etc.):
-#    - Se a API retornar um erro (ex: 429 "Too Many Requests", 413 "Tokens Exceeded", 500 "Server Error"),
-#      o script imprimirá o erro, aguardará o `RETRY_DELAY` (ex: 60 segundos) e
+# 4. Tratamento de Erros de API (Rate Limiting, Erros 4xx vs 5xx):
+#    - Se a API retornar um erro 4xx (ex: 400 Bad Request por query vaga), o script
+#      registrará o erro como resultado final e passará para o próximo teste.
+#    - Se a API retornar um erro 5xx (ex: 500 Internal Server Error),
+#      o script imprimirá o erro, aguardará o `RETRY_DELAY` e
 #      tentará a *mesma query* novamente.
 #
 # 5. Controle de Taxa Preventivo:
@@ -58,7 +61,7 @@ MICROSERVICE_URL = "http://127.0.0.1:5001/debug-query"
 # Delay "amigável" entre requisições BEM-SUCEDIDAS para EVITAR o rate limit.
 DELAY_BETWEEN_REQUESTS = 5 # segundos
 
-# Delay "de penalidade" quando um erro (timeout, rate limit) ocorre, para AGUARDAR o reset da API.
+# Delay "de penalidade" quando um erro (timeout, erro 5xx) ocorre, para AGUARDAR o reset da API.
 RETRY_DELAY = 60 # 60 segundos
 
 # Configurações para o "throttling em lote" para evitar banimento
@@ -70,7 +73,7 @@ def run_tests(queries):
     """
     Função principal que executa a suíte de testes de forma resiliente.
     Ela recebe uma lista de queries e só passa para a próxima após o
-    sucesso da query atual.
+    sucesso (200) ou erro do cliente (4xx) da query atual. Retenta em 5xx/timeouts.
     """
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================")
     print(f"{Style.BRIGHT}{Fore.MAGENTA} INICIANDO ROTEIRO DE TESTES - New Tracking Intent AI")
@@ -84,9 +87,9 @@ def run_tests(queries):
 
         # Prepara o payload JSON para a requisição POST.
         payload = {"query": query}
-        
+
         # --- INÍCIO DA LÓGICA DE RETENTATIVA ---
-        success = False
+        success = False # Indica que o teste foi concluído (seja sucesso 200 ou erro 4xx)
         while not success:
             try:
                 # Captura o tempo exato de início da tentativa
@@ -97,63 +100,78 @@ def run_tests(queries):
                 # Faz a chamada POST para o endpoint de debug, com um timeout de 120 segundos.
                 response = requests.post(MICROSERVICE_URL, json=payload, timeout=120)
 
-                # Verifica se a chamada foi bem-sucedida (status code 200 OK).
+                # Processa a resposta baseada no status code
                 if response.status_code == 200:
-                    # Captura o tempo exato de fim e calcula a duração
+                    # SUCESSO NORMAL (200 OK)
                     end_time_epoch = time.time()
                     end_time_str = datetime.datetime.now().strftime('%H:%M:%S')
                     duration = end_time_epoch - start_time_epoch
 
                     # Extrai os dados da resposta JSON.
                     result_data = response.json()
-                    
                     enhanced_query = result_data.get("enhanced_query", "ERRO: Não foi possível gerar a query otimizada.")
-                    parsed_json = result_data.get("parsed_json", {})
+                    parsed_json = result_data.get("parsed_json", {}) # Garante que temos o dict aqui
 
                     # Exibe os resultados formatados no console.
                     print(f"{Fore.YELLOW}1. Query Otimizada (pela IA):")
                     print(f"{Style.NORMAL}{Fore.YELLOW}{enhanced_query}\n")
-                    
                     print(f"{Fore.GREEN}2. JSON de Filtros Gerado:")
                     print(f"{Style.NORMAL}{Fore.GREEN}{json.dumps(parsed_json, indent=2, ensure_ascii=False)}\n")
-                    
                     # Exibe o log de performance da requisição
                     print(f"{Style.BRIGHT}{Fore.BLUE}Tempo de Resposta: {duration:.2f} segundos (Início: {start_time_str} | Fim: {end_time_str}){Style.RESET_ALL}")
-                    
-                    # SINALIZA SUCESSO: Quebra o loop 'while' e passa para a próxima query.
-                    success = True
-                
-                else:
-                    # Erro da API (ex: 429, 413, 500). A API está online, mas retornou um erro.
+
+                    success = True # Sai do loop while, teste concluído com sucesso
+
+                elif 400 <= response.status_code < 500:
+                    # ERRO DO CLIENTE (4xx, como 400 Bad Request) - Considera como RESULTADO FINAL do teste
+                    end_time_epoch = time.time()
+                    end_time_str = datetime.datetime.now().strftime('%H:%M:%S')
+                    duration = end_time_epoch - start_time_epoch
                     error_details = "Erro desconhecido."
                     try:
-                        # Tenta extrair a mensagem de erro detalhada do JSON da API.
                         error_details = response.json().get('detail', response.text)
                     except json.JSONDecodeError:
                         error_details = response.text
-                        
+
+                    # Exibe o erro 4xx como resultado do teste (em vermelho)
+                    print(f"{Fore.RED}ERRO HTTP {response.status_code} (Resultado Final): {error_details}")
+                    # Exibe o tempo que levou para obter o erro
+                    print(f"{Style.BRIGHT}{Fore.BLUE}Tempo de Resposta (para erro): {duration:.2f} segundos (Início: {start_time_str} | Fim: {end_time_str}){Style.RESET_ALL}")
+
+                    success = True # Sai do loop while, teste concluído (com erro esperado ou inesperado do cliente)
+
+                else: # Inclui erros 5xx (Erro do Servidor) e outros códigos inesperados
+                    # ERRO DO SERVIDOR (5xx) ou Outro Inesperado - TENTA NOVAMENTE
+                    error_details = "Erro desconhecido."
+                    try:
+                        error_details = response.json().get('detail', response.text)
+                    except json.JSONDecodeError:
+                        error_details = response.text
+
                     print(f"{Fore.YELLOW}ERRO na API (Status {response.status_code}): {error_details}")
                     print(f"{Fore.YELLOW}Aguardando {RETRY_DELAY} segundos para tentar novamente a MESMA query...")
                     time.sleep(RETRY_DELAY)
-                    # 'success' continua False, então o loop 'while' repetirá a query.
+                    # 'success' continua False, então o loop 'while' VAI repetir a tentativa
 
             except requests.exceptions.RequestException as e:
-                # Erro de Rede: Captura falhas críticas (Timeout, Conexão Recusada, DNS, etc.).
+                # ERRO DE REDE/TIMEOUT - TENTA NOVAMENTE
+                # Captura falhas críticas (Timeout, Conexão Recusada, DNS, etc.).
                 print(f"{Fore.RED}FALHA DE CONEXÃO/TIMEOUT: {e}")
                 print(f"{Fore.RED}Verifique se o microsserviço está rodando em {MICROSERVICE_URL}.")
                 print(f"{Fore.YELLOW}Aguardando {RETRY_DELAY} segundos para tentar novamente a MESMA query...")
                 time.sleep(RETRY_DELAY)
-                # 'success' continua False, então o loop 'while' repetirá a query.
-        
+                # 'success' continua False, então o loop 'while' VAI repetir a tentativa
+
         # --- FIM DA LÓGICA DE RETENTATIVA ---
 
         print(f"{Style.BRIGHT}{Fore.CYAN}---------------------\n")
-        
-        # Pausa "amigável" entre os testes BEM-SUCEDIDOS para evitar o rate limit.
+
+        # Pausa "amigável" entre os testes BEM-SUCEDIDOS ou FINALIZADOS (200 ou 4xx)
         if i < total_queries - 1:
             print(f"{Style.BRIGHT}{Fore.MAGENTA}Aguardando {DELAY_BETWEEN_REQUESTS} segundos antes do próximo teste...{Style.RESET_ALL}")
             time.sleep(DELAY_BETWEEN_REQUESTS)
 
+            # Lógica da pausa longa após cada lote
             # O índice 'i' começa em 0. Então o teste #10 é i=9.
             # (i + 1) é o número do teste.
             # Se o número do teste for um múltiplo do tamanho do lote...
@@ -162,7 +180,9 @@ def run_tests(queries):
                 print(f"{Style.BRIGHT}{Fore.RED}==================================================================")
                 print(f"{Style.BRIGHT}{Fore.RED} LOTE DE {REQUESTS_PER_BATCH} TESTES CONCLUÍDO.")
                 print(f"{Style.BRIGHT}{Fore.RED} INICIANDO PAUSA LONGA DE {LONG_PAUSE_MINUTES} MINUTOS PARA EVITAR BANIMENTO...")
-                print(f"{Style.BRIGHT}{Fore.RED} Próximo teste (TESTE #{i+2}) rodará aproximadamente às {datetime.datetime.now() + datetime.timedelta(seconds=long_pause_seconds)}")
+                # Calcula e exibe a hora aproximada de retomada
+                resume_time = datetime.datetime.now() + datetime.timedelta(seconds=long_pause_seconds)
+                print(f"{Style.BRIGHT}{Fore.RED} Próximo teste (TESTE #{i+2}) rodará aproximadamente às {resume_time.strftime('%H:%M:%S')}")
                 print(f"{Style.BRIGHT}{Fore.RED}==================================================================\n")
                 time.sleep(long_pause_seconds)
 
@@ -178,11 +198,11 @@ if __name__ == "__main__":
         print(f"{Fore.RED}Erro: Por favor, especifique o nome do arquivo de testes.")
         print(f"{Fore.YELLOW}Exemplo de uso: python scripts/debug_runner.py testes_completos.txt")
         sys.exit(1)
-        
+
     test_file_name = sys.argv[1]
     # Constrói o caminho completo para o arquivo de teste, assumindo a nova estrutura de pastas.
-    test_file_path = f"tests_cases/{test_file_name}"
-    
+    test_file_path = f"tests_cases/{test_file_name}" # Ajuste se o nome da pasta for diferente
+
     try:
         # Abre o arquivo de teste com codificação utf-8 para ler caracteres especiais.
         with open(test_file_path, 'r', encoding='utf-8') as f:
@@ -191,10 +211,10 @@ if __name__ == "__main__":
             # 2. if line.strip(): Ignora linhas que ficaram vazias após o strip.
             # 3. and not line.strip().startswith(...): Ignora linhas de comentário.
             queries_to_run = [
-                line.strip() for line in f.readlines() 
+                line.strip() for line in f.readlines()
                 if line.strip() and not line.strip().startswith('#') and not line.strip().startswith('=')
             ]
-        
+
         if not queries_to_run:
             print(f"{Fore.YELLOW}Nenhuma query de teste encontrada em '{test_file_path}'.")
         else:
