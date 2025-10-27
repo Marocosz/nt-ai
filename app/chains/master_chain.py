@@ -135,8 +135,8 @@ def _create_chains():
     Função "fábrica" auxiliar para construir e configurar os componentes base das cadeias.
     Esta função é chamada uma vez na inicialização para criar os objetos reutilizáveis.
     """
-    # llm = get_llm_google()
-    llm = get_llm_groq()
+    llm = get_llm_google()
+    # llm = get_llm_groq() 
 
     # --- Definição da Cadeia de Normalização (Enhancer) com Timing ---
     # Passo 1: Prepara o prompt e o LLM
@@ -145,37 +145,36 @@ def _create_chains():
     query_enhancer_chain = (
         # Passo A: Captura o tempo inicial ANTES da chamada LLM
         RunnablePassthrough.assign(start_time=lambda x: time.time())
-        # Passo B: Executa a chamada LLM principal (Prompt + LLM)
-        #          Precisamos passar o input original E o start_time para o próximo passo
+        # Passo B: Executa a chamada LLM principal (Prompt + LLM). O resultado é AIMessage.
         .assign(llm_output=lambda x: enhancer_prompt_llm.invoke(x))
-        # Passo C: Loga o tempo e retorna APENAS a saída do LLM
+        # Passo C: Loga o tempo usando o start_time e o llm_output, e retorna o llm_output (AIMessage)
         | RunnableLambda(lambda x: log_llm_call_time("Enhancer", x['start_time'], x['llm_output']))
-        # Passo D: Aplica o parser final (StrOutputParser)
+        # Passo D: Aplica o StrOutputParser DEPOIS do log, para converter AIMessage -> string
         | StrOutputParser()
     )
 
-    # --- Definição da Cadeia de Parsing com Auto-Correção ---
+    # --- Definição da Cadeia de Parsing com Auto-Correção e Timing ---
     output_fixing_parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
-
     # Passo 1 (Parser): Prepara o prompt e o LLM principal
     parser_prompt_llm = JSON_PARSER_PROMPT | llm
 
     json_parser_chain = (
         # Passo A (Parser): Captura o tempo inicial ANTES da chamada LLM principal
         RunnablePassthrough.assign(start_time=lambda x: time.time())
-        # Passo B (Parser): Executa a chamada LLM principal (Prompt + LLM)
-        .assign(llm_output_str=lambda x: parser_prompt_llm.invoke(x) | StrOutputParser()) # Garante que a saída é string
-        # Passo C (Parser): Loga o tempo e retorna APENAS a string de saída do LLM
-        | RunnableLambda(lambda x: log_llm_call_time("Parser", x['start_time'], x['llm_output_str']))
+        # Passo B (Parser): Executa a chamada LLM principal (Prompt + LLM). O resultado é AIMessage.
+        .assign(llm_output=lambda x: parser_prompt_llm.invoke(x)) # <<< CORREÇÃO APLICADA AQUI (remove StrOutputParser daqui)
+        # Passo C (Parser): Loga o tempo usando o start_time e o llm_output, e retorna o llm_output (AIMessage)
+        | RunnableLambda(lambda x: log_llm_call_time("Parser", x['start_time'], x['llm_output']))
+        # Passo D (Parser): Aplica o StrOutputParser DEPOIS do log, para converter AIMessage -> string
+        | StrOutputParser() # <<< CORREÇÃO APLICADA AQUI
         # [CoT DESATIVADO] - A linha abaixo seria necessária se CoT estivesse ativo
         # | RunnableLambda(_extract_json_from_output)
-        # Passo D (Parser): Passa a string (idealmente JSON) para o OutputFixingParser
-        # [!] ATENÇÃO: O tempo gasto DENTRO do OutputFixingParser (se ele precisar chamar o LLM de novo)
-        # NÃO será capturado por este log 'Parser'.
+        # Passo E (Parser): Passa a string (idealmente JSON) para o OutputFixingParser
         | output_fixing_parser
     )
 
     return query_enhancer_chain, json_parser_chain
+
 
 
 def create_master_chain() -> Runnable:
