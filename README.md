@@ -183,7 +183,7 @@ O objetivo é fornecer ao leitor uma compreensão completa do funcionamento inte
 
 ## [`app/main.py`](./app/main.py)
 
-> Este arquivo é responsável por configurar e expor os endpoints da API.
+> Este arquivo configura e expõe a API FastAPI, gerenciando o ciclo de vida e as requisições.
 
 1. **Inicialização:** Carrega as variáveis de ambiente e, através dos eventos de ciclo de vida (startup/shutdown), gerencia o carregamento e o encerramento da aplicação.
 
@@ -191,7 +191,10 @@ O objetivo é fornecer ao leitor uma compreensão completa do funcionamento inte
 
 3. **Carregamento Otimizado:** Invoca a criação das cadeias de IA uma única vez durante o evento de startup, uma otimização de performance crucial que evita recarregar os modelos a cada requisição.
 
-4. **Endpoints Assíncronos:** Define os endpoints /parse-query (produção) e /debug-query (testes) de forma assíncrona (async def), permitindo que o servidor lide com múltiplas requisições concorrentes de forma eficiente.
+4.  **Endpoints Assíncronos:** Define `/parse-query` e `/debug-query`. Ambos agora incluem:
+    * Validação semântica do JSON gerado pela IA usando Pydantic (`ParsedFilters`), retornando erro 500 se inválido.
+    * Verificação se o JSON validado é totalmente nulo, retornando erro 400 se for o caso.
+    * Logging do tempo total de processamento da requisição.
 
 ---
 
@@ -227,6 +230,9 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
 
     - **Ação:** Se o LLM gerar um JSON com erro de sintaxe, esta ferramenta automaticamente solicita ao LLM que corrija seu próprio erro antes de retornar o resultado
 
+**Funcionalidades Adicionais:**
+* **Logging de Performance:** Inclui lógica para registrar o tempo gasto em cada chamada principal ao LLM (Enhancer e Parser).
+* **Cadeias `master` e `debug`:** Define ambas as cadeias, sendo que a `debug` expõe resultados intermediários.
 
 ## [`app/prompts/filter_prompts.py`](.app/prompts/filter_prompts.py)
 
@@ -258,8 +264,6 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
 - `scripts/debug_runner.py:` Uma ferramenta de linha de comando para executar o roteiro de testes (ex: testes_completos.txt) de forma automatizada, exibindo os resultados de cada query diretamente no terminal. É essencial para a validação em lote.
 
 - `scripts/test_ui.py:` Lança uma interface web local com Streamlit, ideal para testes individuais, prototipação rápida de novas regras de prompt e demonstrações visuais do fluxo da IA.
-
-- `sql/:` Esta pasta organiza todo o código SQL relevante para o projeto, incluindo a procedure principal SP_TK_NOTAS_AI_HOM e os scripts usados para validação no banco de dados.
 
 - `tests_case/:` Armazena os arquivos .txt que contêm as frases em linguagem natural usadas como entrada para os testes de integração, servindo como a "fonte da verdade" para validar o comportamento da IA.
 
@@ -475,9 +479,11 @@ Antes de começar, garanta que seu sistema possui as ferramentas essenciais para
 4.  **Configurar Variáveis de Ambiente:**
     Este projeto precisa de uma chave de API para o serviço LLM da Groq.
     * Crie um arquivo chamado `.env` na **raiz do projeto** (`nt-ai/`).
-    * Abra o arquivo `.env` e adicione a linha abaixo, inserindo sua chave real obtida no [Console da Groq](https://console.groq.com/keys):
+    * Abra o arquivo `.env` e adicione a linha abaixo, inserindo sua chave real obtida no [Console da Groq](https://console.groq.com/keys) ou do [Google API](https://aistudio.google.com/api-keys):
         ```env
         GROQ_API_KEY=<SUA_CHAVE_API_GROQ>
+
+        GOOGLE_API_KEY=<SUA_CHAVE_DO_GOOGLE_AI_STUDIO>
         ```
     * **Importante:** Adicione `.env` ao seu arquivo `.gitignore` para evitar commitar acidentalmente sua chave secreta.
 
