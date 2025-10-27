@@ -25,9 +25,9 @@
 #
 # 4. Definição de Endpoints (Rotas) Assíncronos:
 #    - `/parse-query` (POST): O endpoint de produção, otimizado para retornar apenas o
-#      resultado final (o JSON de filtros). Retorna erro 400 se o JSON for nulo.
+#      resultado final (o JSON de filtros). Valida o JSON e retorna erro 400 se for nulo.
 #    - `/debug-query` (POST): O endpoint de desenvolvimento e diagnóstico, que retorna
-#      os resultados de cada etapa intermediária. Retorna erro 400 se o JSON for nulo.
+#      os resultados de cada etapa intermediária. Valida o JSON interno e retorna erro 400 se for nulo.
 #
 # 5. Validação de Entrada (Pydantic):
 #    - Utiliza o modelo `QueryRequest` para garantir que todas as requisições recebidas
@@ -36,64 +36,50 @@
 # =================================================================================================
 # =================================================================================================
 
-import time 
+import time
 import logging
 from logging.handlers import RotatingFileHandler
 from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError # <-- Adicionado ValidationError
 from dotenv import load_dotenv
 from app.chains.master_chain import create_master_chain, create_debug_chain
+from app.core.schemas import ParsedFilters
 from pathlib import Path
 
 # --- Configuração Avançada do Logging ---
 
 # --- DEFINIÇÃO DE CAMINHO ABSOLUTO PARA O LOG ---
-# Pega o caminho absoluto para o diretório raiz do projeto (a pasta que contém a pasta 'app').
-# Path(__file__) -> caminho para este arquivo (main.py)
-# .parent -> sobe para a pasta 'app'
-# .parent -> sobe para a pasta raiz do projeto 'nt-ai'
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
-LOG_DIR = PROJECT_ROOT / "logs"  # Define o caminho para a pasta de logs.
-
-# Cria o diretório de logs se ele não existir.
+LOG_DIR = PROJECT_ROOT / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-# Define as constantes para a configuração dos logs, facilitando a manutenção.
 LOG_FILE = LOG_DIR / "nt_ai_service.log"
-MAX_LOG_SIZE_MB = 5  # Tamanho máximo de 5 MB por arquivo de log.
-LOG_BACKUP_COUNT = 5 # Número de arquivos de backup a serem mantidos (ex: .log, .log.1, .log.2...).
+MAX_LOG_SIZE_MB = 5
+LOG_BACKUP_COUNT = 5
 
-# Cria o logger principal para a aplicação. Usar __name__ é uma convenção padrão.
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO) # Define o nível mínimo de severidade para as mensagens a serem processadas.
-
-# Cria um formatador para padronizar a aparência de todas as linhas de log.
+logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# Cria o handler responsável por escrever os logs em um arquivo com rotação automática.
-# Quando o arquivo atinge `maxBytes`, ele é renomeado e um novo é criado.
 file_handler = RotatingFileHandler(
     LOG_FILE,
-    maxBytes=MAX_LOG_SIZE_MB * 1024 * 1024, # Converte o tamanho de MB para bytes.
+    maxBytes=MAX_LOG_SIZE_MB * 1024 * 1024,
     backupCount=LOG_BACKUP_COUNT,
     encoding='utf-8'
 )
-file_handler.setFormatter(formatter) # Aplica o formatador a este handler.
+file_handler.setFormatter(formatter)
 
-# Cria o handler para exibir os logs no console (terminal). Essencial para debug em tempo real.
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 
-# Adiciona ambos os handlers ao logger. A partir daqui, qualquer chamada a `logger.info`, `logger.error`,
-# etc., será enviada tanto para o arquivo quanto para o console.
 logger.addHandler(file_handler)
 logger.addHandler(console_handler)
-
 # --- Fim da Configuração do Logging ---
 
 
-# Carrega as variáveis de ambiente do arquivo .env (ex: GROQ_API_KEY, GOOGLE_API_KEY).
+# Carrega as variáveis de ambiente do arquivo .env (API Keys, CA_BUNDLE_PATH)
 load_dotenv()
+
 
 # Cria a instância principal da aplicação FastAPI com metadados para a documentação.
 app = FastAPI(
@@ -104,7 +90,6 @@ app = FastAPI(
 
 
 # Define os objetos das cadeias como globais (iniciados como None).
-# Eles serão populados pela função de startup para garantir que sejam carregados apenas uma vez.
 master_chain = None
 debug_chain = None
 
@@ -120,7 +105,6 @@ async def startup_event():
     logger.info("Carregando as cadeias de LangChain na inicialização...")
 
     # Carrega as cadeias de IA aqui, dentro do evento de startup.
-    # Esta é a prática recomendada pelo FastAPI.
     master_chain = create_master_chain()
     debug_chain = create_debug_chain()
 
@@ -137,7 +121,6 @@ async def shutdown_event():
 
 
 # Define o formato esperado para o corpo (body) da requisição, usando Pydantic.
-# Garante que qualquer requisição para os endpoints tenha uma chave "query" do tipo string.
 class QueryRequest(BaseModel):
     query: str
 
@@ -148,44 +131,62 @@ def is_all_null(data):
     Retorna True se todos forem None, False caso contrário.
     """
     if not isinstance(data, dict):
-        return False # Se não for um dicionário, não está "todo nulo"
+        return False
     if not data:
-        return True # Dicionário vazio é considerado "todo nulo"
+        return True
     return all(value is None for value in data.values())
 
 
 @app.post("/parse-query")
 async def parse_query(request: QueryRequest):
     """
-    Endpoint de produção. Recebe uma query, processa na cadeia principal
-    e retorna o JSON de filtros final, OU um erro 400 se o JSON for todo nulo.
+    Endpoint de produção. Recebe uma query, processa na cadeia principal,
+    valida o JSON semanticamente e retorna o resultado, OU um erro 400/500.
     """
     start_request_time = time.time()
-    
     try:
         # Validação de entrada básica
         if not request.query or not request.query.strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A 'query' não pode ser vazia.")
 
         logger.info(f"Recebida nova requisição em /parse-query para a query: '{request.query[:50]}...'")
-        result = await master_chain.ainvoke({"query": request.query})
+        # 1. Obter o resultado bruto da cadeia (já deve ser um dict após OutputFixingParser)
+        raw_result_dict = await master_chain.ainvoke({"query": request.query})
 
-        if is_all_null(result):
+        try:
+            # 2. Tentar validar/parsear o dicionário usando o modelo Pydantic
+            validated_result = ParsedFilters(**raw_result_dict)
+            # Se chegou aqui, a estrutura, tipos e valores (Literals) estão corretos.
+            # Usaremos o dicionário gerado pelo Pydantic para garantir consistência e remover campos extras se houver.
+            result_dict_to_return = validated_result.model_dump(exclude_unset=True) # Exclui campos que não foram definidos (permanecem None)
+
+        except ValidationError as e:
+            # 3. Se a validação Pydantic falhar (tipo errado, valor inválido, etc.)
+            logger.error(f"Falha na validação Pydantic para query '{request.query}': {e.errors()}", exc_info=False)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, # 500 indica falha interna (IA gerou JSON inválido)
+                detail="Erro interno: A IA gerou uma estrutura JSON com dados inválidos após a análise."
+            )
+
+        # 4. Checar se o JSON VALIDADO é totalmente nulo
+        if is_all_null(result_dict_to_return):
             logger.warning(f"Consulta vaga/irrelevante detectada para query: '{request.query}'. Retornando erro 400.")
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, # Usa status.HTTP_400_BAD_REQUEST
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="A consulta fornecida é muito vaga, irrelevante ou não pôde ser interpretada. Por favor, seja mais específico."
             )
 
         duration_request = time.time() - start_request_time
         logger.info(f"TIMING: Requisição /parse-query completa levou {duration_request:.2f} segundos.")
 
-        return result
+        # 5. Retornar o dicionário validado e não-nulo
+        return result_dict_to_return
+
     except HTTPException as http_exc:
-        # Re-levanta exceções HTTP (como a nossa 400) para o FastAPI tratar
+        # Re-levanta exceções HTTP (como a nossa 400 ou a 500 da validação)
         raise http_exc
     except Exception as e:
-        logger.error(f"Erro no endpoint /parse-query para a query: '{request.query}'", exc_info=True)
+        logger.error(f"Erro inesperado no endpoint /parse-query para a query: '{request.query}'", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno: {str(e)}")
 
 
@@ -193,38 +194,64 @@ async def parse_query(request: QueryRequest):
 async def debug_query(request: QueryRequest):
     """
     Endpoint de desenvolvimento. Retorna resultados intermediários,
-    OU um erro 400 se o JSON final for todo nulo.
+    valida o JSON interno semanticamente, OU retorna um erro 400/500.
     """
     start_request_time = time.time()
-    
     try:
         if not request.query or not request.query.strip():
-             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A 'query' não pode ser vazia.") # Usa status
+             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A 'query' não pode ser vazia.")
 
         logger.info(f"Recebida nova requisição em /debug-query para a query: '{request.query[:50]}...'")
-        result = await debug_chain.ainvoke({"query": request.query})
+        # 1. Obter o resultado bruto completo da cadeia de debug
+        raw_debug_result = await debug_chain.ainvoke({"query": request.query})
 
-        # No debug_chain, o JSON está dentro da chave 'parsed_json'
-        parsed_json_result = result.get("parsed_json")
+        # 2. Extrair o dicionário JSON que precisa ser validado
+        parsed_json_dict = raw_debug_result.get("parsed_json")
 
-        if is_all_null(parsed_json_result):
+        validated_parsed_json_dict = None # Inicializa
+        if isinstance(parsed_json_dict, dict): # Só valida se for um dicionário
+            try:
+                # 3. Tentar validar/parsear o dicionário JSON interno
+                validated_result = ParsedFilters(**parsed_json_dict)
+                # Guarda o dicionário validado para substituir no resultado final
+                validated_parsed_json_dict = validated_result.model_dump(exclude_unset=True)
+
+            except ValidationError as e:
+                # 4. Se a validação Pydantic falhar
+                logger.error(f"Falha na validação Pydantic (debug) para query '{request.query}': {e.errors()}", exc_info=False)
+                # Mesmo no debug, é um erro interno da IA gerar JSON inválido
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Erro interno: A IA gerou uma estrutura JSON interna com dados inválidos. Erros: {e.errors()}"
+                )
+        else:
+             # Se o parsed_json não for um dict (ex: erro no OutputFixingParser retornou string ou None)
+             logger.error(f"Resultado 'parsed_json' não é um dicionário para query '{request.query}'. Valor: {parsed_json_dict}")
+             raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erro interno: Falha ao obter o JSON interno para validação."
+             )
+
+        # 5. Checar se o JSON VALIDADO é totalmente nulo
+        if is_all_null(validated_parsed_json_dict):
             logger.warning(f"Consulta vaga/irrelevante detectada (debug) para query: '{request.query}'. Retornando erro 400.")
-            # Mesmo no debug, retornamos o erro 400 para consistência.
-            # O chamador (debug_runner) verá o erro HTTP em vez do JSON nulo.
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, # Usa status.HTTP_400_BAD_REQUEST
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="A consulta fornecida é muito vaga, irrelevante ou não pôde ser interpretada (JSON final seria nulo)."
             )
 
         duration_request = time.time() - start_request_time
         logger.info(f"TIMING: Requisição /debug-query completa levou {duration_request:.2f} segundos.")
 
-        return result
+        # 6. Substitui o 'parsed_json' original pelo validado no resultado de debug ANTES de retornar
+        raw_debug_result["parsed_json"] = validated_parsed_json_dict
+        return raw_debug_result # Retorna a estrutura completa do debug com o JSON validado
+
     except HTTPException as http_exc:
-        # Re-levanta exceções HTTP (como a nossa 400)
+        # Re-levanta exceções HTTP (como a 400 ou 500)
         raise http_exc
     except Exception as e:
-        logger.error(f"Erro na execução da cadeia de debug para a query: '{request.query}'", exc_info=True)
+        logger.error(f"Erro inesperado na execução da cadeia de debug para a query: '{request.query}'", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno ao processar a query com a IA: {str(e)}")
 
 # Comando para rodar a aplicação: uvicorn app.main:app --reload --port 5001

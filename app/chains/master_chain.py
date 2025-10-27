@@ -43,8 +43,21 @@ from langchain.output_parsers import OutputFixingParser
 from app.core.llm import get_llm_google, get_llm_groq
 from app.prompts.filter_prompts import QUERY_ENHANCER_PROMPT, JSON_PARSER_PROMPT
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 logger = logging.getLogger(__name__)
+
+
+# --- Configuração do Timezone (Hardcoded) ---
+HARDCODED_TIMEZONE_STR = "America/Sao_Paulo"
+try:
+    APP_TZ = ZoneInfo(HARDCODED_TIMEZONE_STR)
+    logger.info(f"Usando timezone (hardcoded): {HARDCODED_TIMEZONE_STR}")
+except ZoneInfoNotFoundError:
+    # Fallback muito improvável com string hardcoded válida, mas seguro ter.
+    logger.error(f"Timezone hardcoded '{HARDCODED_TIMEZONE_STR}' é inválido! Usando UTC como fallback.")
+    APP_TZ = ZoneInfo("UTC")
+# --- Fim da Configuração do Timezone ---
 
 
 def _get_current_dates(data_passthrough):
@@ -55,7 +68,7 @@ def _get_current_dates(data_passthrough):
     O argumento `data_passthrough` recebe os dados que já estão no fluxo da cadeia,
     mas não é utilizado aqui; está presente para compatibilidade com o `.assign()`.
     """
-    today = datetime.now()
+    today = datetime.now(APP_TZ)
     start_of_week = today - timedelta(days=today.weekday())
     end_of_week = start_of_week + timedelta(days=6)
     start_of_month = today.replace(day=1)
@@ -166,7 +179,7 @@ def _create_chains():
         # Passo C (Parser): Loga o tempo usando o start_time e o llm_output, e retorna o llm_output (AIMessage)
         | RunnableLambda(lambda x: log_llm_call_time("Parser", x['start_time'], x['llm_output']))
         # Passo D (Parser): Aplica o StrOutputParser DEPOIS do log, para converter AIMessage -> string
-        | StrOutputParser() # <<< CORREÇÃO APLICADA AQUI
+        | StrOutputParser()
         # [CoT DESATIVADO] - A linha abaixo seria necessária se CoT estivesse ativo
         # | RunnableLambda(_extract_json_from_output)
         # Passo E (Parser): Passa a string (idealmente JSON) para o OutputFixingParser
