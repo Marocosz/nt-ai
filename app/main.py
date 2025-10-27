@@ -36,9 +36,10 @@
 # =================================================================================================
 # =================================================================================================
 
+import time 
 import logging
 from logging.handlers import RotatingFileHandler
-from fastapi import FastAPI, HTTPException, status # <-- Adicione 'status'
+from fastapi import FastAPI, HTTPException, status
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from app.chains.master_chain import create_master_chain, create_debug_chain
@@ -91,7 +92,7 @@ logger.addHandler(console_handler)
 # --- Fim da Configuração do Logging ---
 
 
-# Carrega as variáveis de ambiente do arquivo .env (ex: GROQ_API_KEY).
+# Carrega as variáveis de ambiente do arquivo .env (ex: GROQ_API_KEY, GOOGLE_API_KEY).
 load_dotenv()
 
 # Cria a instância principal da aplicação FastAPI com metadados para a documentação.
@@ -117,12 +118,12 @@ async def startup_event():
     logger.info("===     INICIANDO APLICAÇÃO NT-AI         ===")
     logger.info("=============================================")
     logger.info("Carregando as cadeias de LangChain na inicialização...")
-    
+
     # Carrega as cadeias de IA aqui, dentro do evento de startup.
     # Esta é a prática recomendada pelo FastAPI.
     master_chain = create_master_chain()
     debug_chain = create_debug_chain()
-    
+
     logger.info("Cadeias de LangChain carregadas com sucesso.")
 
 @app.on_event("shutdown")
@@ -159,6 +160,8 @@ async def parse_query(request: QueryRequest):
     Endpoint de produção. Recebe uma query, processa na cadeia principal
     e retorna o JSON de filtros final, OU um erro 400 se o JSON for todo nulo.
     """
+    start_request_time = time.time()
+    
     try:
         # Validação de entrada básica
         if not request.query or not request.query.strip():
@@ -173,6 +176,9 @@ async def parse_query(request: QueryRequest):
                 status_code=status.HTTP_400_BAD_REQUEST, # Usa status.HTTP_400_BAD_REQUEST
                 detail="A consulta fornecida é muito vaga, irrelevante ou não pôde ser interpretada. Por favor, seja mais específico."
             )
+
+        duration_request = time.time() - start_request_time
+        logger.info(f"TIMING: Requisição /parse-query completa levou {duration_request:.2f} segundos.")
 
         return result
     except HTTPException as http_exc:
@@ -189,10 +195,12 @@ async def debug_query(request: QueryRequest):
     Endpoint de desenvolvimento. Retorna resultados intermediários,
     OU um erro 400 se o JSON final for todo nulo.
     """
+    start_request_time = time.time()
+    
     try:
         if not request.query or not request.query.strip():
              raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A 'query' não pode ser vazia.") # Usa status
-        
+
         logger.info(f"Recebida nova requisição em /debug-query para a query: '{request.query[:50]}...'")
         result = await debug_chain.ainvoke({"query": request.query})
 
@@ -202,12 +210,15 @@ async def debug_query(request: QueryRequest):
         if is_all_null(parsed_json_result):
             logger.warning(f"Consulta vaga/irrelevante detectada (debug) para query: '{request.query}'. Retornando erro 400.")
             # Mesmo no debug, retornamos o erro 400 para consistência.
-            # O  (debug_runner) verá o erro HTTP em vez do JSON nulo.
+            # O chamador (debug_runner) verá o erro HTTP em vez do JSON nulo.
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, # Usa status.HTTP_400_BAD_REQUEST
                 detail="A consulta fornecida é muito vaga, irrelevante ou não pôde ser interpretada (JSON final seria nulo)."
             )
-        
+
+        duration_request = time.time() - start_request_time
+        logger.info(f"TIMING: Requisição /debug-query completa levou {duration_request:.2f} segundos.")
+
         return result
     except HTTPException as http_exc:
         # Re-levanta exceções HTTP (como a nossa 400)
