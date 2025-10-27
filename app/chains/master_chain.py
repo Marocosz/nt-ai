@@ -135,7 +135,8 @@ def _create_chains():
     Função "fábrica" auxiliar para construir e configurar os componentes base das cadeias.
     Esta função é chamada uma vez na inicialização para criar os objetos reutilizáveis.
     """
-    llm = get_llm_google() # Chama a função principal de llm.py (que agora usa Google)
+    # llm = get_llm_google()
+    llm = get_llm_groq()
 
     # --- Definição da Cadeia de Normalização (Enhancer) com Timing ---
     # Passo 1: Prepara o prompt e o LLM
