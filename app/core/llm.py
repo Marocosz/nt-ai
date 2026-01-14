@@ -1,5 +1,6 @@
 from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 import os
 
 def get_llm_groq():
@@ -30,6 +31,23 @@ def get_llm_google():
 
     # Imprime no console qual LLM está sendo carregado (útil para debug)
     print(f"INFO: Usando LLM: Google Gemini ({llm.model})")
+
+    # Retorna a instância configurada do LLM
+    return llm
+
+def get_llm_openai():
+    """
+    Retorna uma instância configurada do modelo OpenAI (GPT).
+    """
+    # Cria a instância do ChatOpenAI
+    llm = ChatOpenAI(
+        model="gpt-5-nano", 
+        temperature=0,                  
+        api_key=os.getenv("OPENAI_API_KEY")  
+    )
+
+    # Imprime no console qual LLM está sendo carregado
+    print(f"INFO: Usando LLM: OpenAI ({llm.model_name})")
 
     # Retorna a instância configurada do LLM
     return llm

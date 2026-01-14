@@ -36,11 +36,11 @@
 import time 
 import logging
 import calendar
-import re # [!] ATENÇÃO: Importado para a função _extract_json_from_output (CoT), atualmente desativada.
-from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda # [!] RunnableLambda agora é usado para timing
+import re 
+from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda 
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain.output_parsers import OutputFixingParser
-from app.core.llm import get_llm_google, get_llm_groq
+from app.core.llm import get_llm_google, get_llm_groq, get_llm_openai
 from app.prompts.filter_prompts import QUERY_ENHANCER_PROMPT, JSON_PARSER_PROMPT
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -148,8 +148,9 @@ def _create_chains():
     Função "fábrica" auxiliar para construir e configurar os componentes base das cadeias.
     Esta função é chamada uma vez na inicialização para criar os objetos reutilizáveis.
     """
-    llm = get_llm_google()
-    # llm = get_llm_groq() 
+    # llm = get_llm_google()
+    # llm = get_llm_groq()
+    llm = get_llm_openai()
 
     # --- Definição da Cadeia de Normalização (Enhancer) com Timing ---
     # Passo 1: Prepara o prompt e o LLM
