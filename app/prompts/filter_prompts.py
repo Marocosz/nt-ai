@@ -1,37 +1,26 @@
 # =================================================================================================
 # =================================================================================================
 #
-#            PROMPT ENGINEERING HUB - O CÉREBRO DA APLICAÇÃO
+#             PROMPT ENGINEERING HUB - O CÉREBRO DA APLICAÇÃO (VERSÃO UNIFICADA / TURBO)
 #
 # -------------------------------------------------------------------------------------------------
 # Propósito do Arquivo:
 # -------------------------------------------------------------------------------------------------
 # Este arquivo é o centro de controle da inteligência artificial do sistema. Ele centraliza
 # todas as instruções (prompts) que definem as "personalidades" e "habilidades" de cada
-# componente de IA, garantindo que a lógica de interpretação seja clara, manutenível e
-# fácil de aprimorar.
+# componente de IA.
 #
 # -------------------------------------------------------------------------------------------------
-# Arquitetura e Princípio de Design:
+# Arquitetura e Princípio de Design (ATUALIZADO):
 # -------------------------------------------------------------------------------------------------
-# A arquitetura segue o princípio de "Separação de Responsabilidades", onde a tarefa
-# complexa de interpretar a linguagem natural é dividida em dois "especialistas" de IA
-# que operam em sequência, como uma linha de montagem:
+# Originalmente, a arquitetura seguia o princípio de "Separação de Responsabilidades" (Tradutor -> Extrator).
+# Para otimizar a performance e reduzir a latência (tempo de resposta) pela METADE, migramos para uma
+# ABORDAGEM UNIFICADA, mantendo INTEGRALMENTE todas as regras de negócio de ambos os passos.
 #
-# 1. O Tradutor (`QUERY_ENHANCER_PROMPT`):
-#  - Responsabilidade: Normalizar a pergunta do usuário de forma segura e previsível.
-#  - Ação: Recebe a pergunta bruta do usuário (ex: "notas rodando") e a traduz para os
-#   termos de negócio canônicos (ex: "notas em trânsito"), expandindo abreviações
-#   e corrigindo a formatação, sem nunca alterar a intenção original.
-#
-# 2. O Especialista em Extração (`JSON_PARSER_PROMPT`):
-#  - Responsabilidade: Converter a pergunta já normalizada em um objeto JSON estruturado.
-#  - Ação: Recebe a pergunta clara do Tradutor e, com base em um conjunto robusto de
-#   regras e exemplos, extrai todas as entidades (datas, status, locais, ordenação)
-#   e as mapeia para os campos do JSON que serão usados como filtros na procedure.
-#
-# Este design modular torna o sistema mais robusto, previsível e fácil de depurar,
-# pois cada etapa da interpretação pode ser testada e aprimorada de forma isolada.
+# 1. O Especialista Unificado (`JSON_PARSER_PROMPT`):
+#    - Agora acumula as responsabilidades de TRADUTOR e EXTRATOR.
+#    - Responsabilidade: Receber a pergunta bruta, normalizar internamente (usando as regras do antigo Enhancer)
+#      e extrair o JSON estruturado (usando as regras do antigo Parser) em UMA ÚNICA PASSAGEM.
 #
 # =================================================================================================
 # =================================================================================================
@@ -39,100 +28,65 @@
 from langchain_core.prompts import PromptTemplate
 from datetime import datetime, timedelta
 
-# --- Bloco 1: O Tradutor de Termos de Negócio (QUERY_ENHANCER_PROMPT) ---
+# --- Bloco Unificado: Tradutor + Extrator ---
 
-# Define as instruções para o primeiro LLM da cadeia.
-# Sua única função é atuar como um "tradutor" seguro, limpando a pergunta do usuário
-# e substituindo sinônimos por termos de negócio oficiais, sem adicionar ou remover
-# qualquer informação ou intenção.
-enhancer_template = """
-Você é um tradutor de linguagem natural para termos de negócio. Sua tarefa é normalizar a pergunta do usuário de forma segura e previsível. Sua diretriz principal é **preservar 100% da intenção original do usuário.** Você nunca deve adicionar ou remover informações ou filtros. Responda APENAS com a frase reescrita.
+# Este prompt contém TODO o conhecimento do sistema.
+parser_template = """
+Você é um assistente especialista em logística. Sua tarefa é converter a pergunta do usuário diretamente para um objeto JSON de filtros.
+Responda APENAS com o JSON. Sem nenhum texto adicional.
+
+A data de referência para cálculos é {today}.
+
+# =================================================================================================
+# PARTE 1: REGRAS DE NORMALIZAÇÃO E TRADUÇÃO (Mentalize isso antes de extrair)
+# (Estas regras devem ser aplicadas internamente para interpretar a intenção do usuário)
+# =================================================================================================
 
 --- REGRAS DE OURO (NÃO QUEBRE NUNCA) ---
 1. **PROIBIDO ADICIONAR CONCEITOS:** Se o usuário pediu por "entregues", a frase final SÓ PODE conter "entregues". Nunca adicione "emitidas" ou qualquer outro evento que não estava lá.
-2. **PROIBIDO REMOVER CONCEITOS:** Se o usuário mencionou um status ("rodando") e uma ordenação ("mais caro"), a frase final DEVE conter AMBOS os conceitos traduzidos.
-3. **REGRA MESTRE DE PRESERVAÇÃO DE EVENTOS:** As palavras "agenda", "entregue", "emitido", "previsto", "previsão real" e "baixada" são **TERMOS DE EVENTO DE DATA PROTEGIDOS**. Você DEVE mantê-las na frase reescrita exatamente como elas apareceram. **NUNCA** as traduza para um "status de análise" (como "DO DIA" ou "DIA SEGUINTE").
+2. **PROIBIDO REMOVER CONCEITOS:** Se o usuário mencionou um status ("rodando") e uma ordenação ("mais caro"), considere AMBOS os conceitos traduzidos.
+3. **REGRA MESTRE DE PRESERVAÇÃO DE EVENTOS:** As palavras "agenda", "entregue", "emitido", "previsto", "previsão real" e "baixada" são **TERMOS DE EVENTO DE DATA PROTEGIDOS**. Você DEVE mantê-las na interpretação exatamente como elas apareceram. **NUNCA** as traduza para um "status de análise" (como "DO DIA" ou "DIA SEGUINTE").
 
---- TAREFAS PERMITIDAS (SUAS ÚNICAS FUNÇÕES) ---
+--- TAREFAS DE INTERPRETAÇÃO (SUAS ÚNICAS FUNÇÕES MENTAIS) ---
 1. **EXPANDIR ABREVIAÇÕES:**
-  - "nf" -> "nota fiscal"
-  - "sp" -> "para o estado de São Paulo"
-  - "cli" -> "do cliente"
-  - "transp" -> "da transportadora"
-  - "ult sem" -> "última semana"
+  - "nf" -> Entenda como "nota fiscal"
+  - "sp" -> Entenda como "para o estado de São Paulo"
+  - "cli" -> Entenda como "do cliente"
+  - "transp" -> Entenda como "da transportadora"
+  - "ult sem" -> Entenda como "última semana"
 
 2. **MAPEAMENTO DE SINÔNIMOS PARA TERMOS DE NEGÓCIO:**
-  - "com atraso" -> "com status de análise ATRASO"
-  - "prevista para amanhã" -> "com status de análise DIA SEGUINTE"
-  - "prevista para hoje" -> "com status de análise DO DIA"
-  - "entrega prevista para o dia seguinte" -> "com status de análise DIA SEGUINTE"
-  - "prevista(o) para daqui a 2 dias" -> "com status de análise PREVISTO PARA 2 DIAS"
-    - "para daqui a dois dias" -> "com status de análise PREVISTO PARA 2 DIAS"
-  - "status entregue" -> "com situação logística ENTREGUE"
-  - "análise entregue" -> "com status de análise de performance ENTREGUE"
-  - "rodando", "viajando", "a caminho" -> "em trânsito"
-  - "paradas na fiscalização", "bloqueadas" -> "retidas"
-  - "ordenar pelo mais caro", "ordenar pelo maior valor" -> "ordenadas pelo maior valor"
-  - "ordenar pelo mais barato", "ordenar pelo menor valor" -> "ordenadas pelo menor valor"
+  - "com atraso" -> Entenda como "com status de análise ATRASO"
+  - "prevista para amanhã" -> Entenda como "com status de análise DIA SEGUINTE"
+  - "prevista para hoje" -> Entenda como "com status de análise DO DIA"
+  - "entrega prevista para o dia seguinte" -> Entenda como "com status de análise DIA SEGUINTE"
+  - "prevista(o) para daqui a 2 dias" -> Entenda como "com status de análise PREVISTO PARA 2 DIAS"
+    - "para daqui a dois dias" -> Entenda como "com status de análise PREVISTO PARA 2 DIAS"
+  - "status entregue" -> Entenda como "com situação logística ENTREGUE"
+  - "análise entregue" -> Entenda como "com status de análise de performance ENTREGUE"
+  - "rodando", "viajando", "a caminho" -> Entenda como "em trânsito"
+  - "paradas na fiscalização", "bloqueadas" -> Entenda como "retidas"
+  - "ordenar pelo mais caro", "ordenar pelo maior valor" -> Entenda como "ordenadas pelo maior valor"
+  - "ordenar pelo mais barato", "ordenar pelo menor valor" -> Entenda como "ordenadas pelo menor valor"
 
-3. **NORMALIZAR ESTRUTURA DA FRASE:** Inicie com letra maiúscula e mantenha o tom (pergunta ou comando), usando verbos como "Me mostre", "Liste", "Quais são".
+3. **NORMALIZAR ESTRUTURA DA FRASE:** Interprete o tom (pergunta ou comando), como "Me mostre", "Liste", "Quais são".
 
-4. **PRESERVAR ESPECIFICIDADE GEOGRÁFICA:** Se o usuário especificar "cidade de", mantenha essa estrutura na frase reescrita.
+4. **PRESERVAR ESPECIFICIDADE GEOGRÁFICA:** Se o usuário especificar "cidade de", mantenha essa estrutura na interpretação.
 
-5. **TERMOS TEMPORAIS OU DE PREVISÃO:** Se o usuário mencionar "previstas", "planejadas", "estimadas" ou termos similares,
-  NUNCA associe automaticamente a status de entrega ou análise. Apenas preserve o termo.
+5. **TERMOS TEMPORAIS OU DE PREVISÃO:** Se o usuário mencionar "previstas", "planejadas", "estimadas" ou termos similares, NUNCA associe automaticamente a status de entrega ou análise. Apenas preserve o termo.
   
 --- REGRA DE VÁLVULA DE ESCAPE (AMBIGUIDADE) ---
-Se a pergunta do usuário contiver múltiplos termos que mapeiam para o MESMO conceito de negócio (ex: "rodando e retidas", ambos são status logísticos), NÃO traduza NENHUM deles. Preserve os termos originais (ex: "notas rodando e também as retidas") para que o Especialista em Extração (o próximo LLM) possa lidar com a ambiguidade.
+Se a pergunta do usuário contiver múltiplos termos que mapeiam para o MESMO conceito de negócio (ex: "rodando e retidas", ambos são status logísticos), NÃO ignore nenhum deles. Preserve os termos originais para lidar com a ambiguidade na extração.
   
 ⚠️ IMPORTANTE: 
 Se não houver indicação explícita de status, situação ou tipo de evento, 
-NÃO INVENTE NENHUM. Apenas normalize a forma textual. NÃO ADICIONE NENHUM DADO DE REGRA DE NEGÓCIO NA FRASE CASO ELA NÃO TENHA SIDO PASSADO PELA ORIGINAL!
-
---- EXEMPLOS QUE ILUSTRAM AS REGRAS ---
----
-Pergunta Original: "quais notas foram entregues hoje?"
-Pergunta Reescrita: "Quais notas fiscais foram entregues hoje?"
-(Explicação: Apenas expandiu "nf" para "nota fiscal". Não adicionou "emitidas".)
----
-Pergunta Original: "notas rodando ordenadas pelo mais caro"
-Pergunta Reescita: "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
-(Explicação: Mapeou "rodando" para "em trânsito" E "mais caro" para "maior valor", preservando ambos os conceitos.)
----
-Pergunta Original: "nf do cli acme transp veloz com atraso"
-Pergunta Reescrita: "Me mostre as notas fiscais do cliente ACME da transportadora Veloz com status de análise ATRASO"
-(Explicação: Expandiu abreviações e mapeou o sinônimo de status.)
----
-Pergunta Original: "o que foi baixado na ult sem"
-Pergunta Reescrita: "O que foi baixado na última semana"
-(Explicação: Corrigiu a abreviação/erro de digitação.)
----
-Pergunta Original: "notas para a cidade de São Paulo"
-Pergunta Reescrita: "Me mostre as notas fiscais para a cidade de São Paulo"
-(Explicação: A especificação "cidade de" foi preservada para não generalizar para o estado.)
----
-Pergunta Original: "notas com data de agenda para hoje"
-Pergunta Reescrita: "Notas com data de agenda para hoje"
-(Explicação: 'agenda' e 'hoje' são preservados para o Parser, conforme a Regra Mestre de Preservação de Eventos.)
----
-
-Pergunta Original: {query}
-Pergunta Reescrita:
-"""
-QUERY_ENHANCER_PROMPT = PromptTemplate.from_template(enhancer_template)
+NÃO INVENTE NENHUM. Apenas considere a forma textual. NÃO ADICIONE NENHUM DADO DE REGRA DE NEGÓCIO NA EXTRAÇÃO CASO ELA NÃO TENHA SIDO PASSADO PELA ORIGINAL!
 
 
-# --- Bloco 2: O Especialista em Extração de JSON (JSON_PARSER_PROMPT) ---
-
-# Define as instruções para o segundo (e principal) LLM da cadeia.
-# Ele recebe a pergunta já normalizada e tem a responsabilidade de extrair todas as
-# entidades relevantes e formatá-las em um JSON estrito, que será usado como
-# entrada para a procedure do banco de dados.
-parser_template = """
-Você é um assistente especialista que analisa um texto claro e o converte para um objeto JSON de filtros. Sua resposta deve ser APENAS o objeto JSON, sem nenhum texto adicional.
-Sua tarefa principal é extrair TODOS os filtros mencionados. A ordenação é uma tarefa secundária. Não ignore um filtro para aplicar uma ordenação.
-
-A data de referência para cálculos é {today}.
+# =================================================================================================
+# PARTE 2: REGRAS DE EXTRAÇÃO DE JSON
+# (Use o entendimento gerado acima para preencher os campos)
+# =================================================================================================
 
 --- DICIONÁRIO DE VARIÁVEIS DE TEMPO ---
 - 'hoje': DE={today}, ATE={today}
@@ -200,7 +154,7 @@ A seguir estão as três interpretações possíveis para um status. Você deve 
 --- REGRAS DE LÓGICA E PRIORIDADE (LEIA COM ATENÇÃO) ---
 
 1. **REGRA DE PRECEDÊNCIA DE PERFORMANCE (PRIORIDADE MÁXIMA):**
-  - O Enhancer (primeira cadeia) já traduziu frases de performance de prazo para termos canônicos (ex: "com status de análise...").
+  - O Enhancer (agora parte mental deste prompt) já traduziu frases de performance de prazo para termos canônicos (ex: "com status de análise...").
   - Se você identificar um desses **Termos de Performance Canônicos** (ex: "com status de análise DIA SEGUINTE", "com status de análise DO DIA", "com status de análise ATRASO"), eles TÊM PRIORIDADE sobre um evento de data genérico (como "previsto").
   - **Ação:** Você DEVE preencher **APENAS `StatusAnaliseData`** com o valor correspondente (ex: "DIA SEGUINTE"). Você **NÃO DEVE** preencher `TipoData` nestes casos (a menos que a Regra 4 de coexistência se aplique).
   - *Esta regra corrige os Testes #17 e #22.*
@@ -213,8 +167,8 @@ A seguir estão as três interpretações possíveis para um status. Você deve 
 3. **REGRA DE ESTADO LOGÍSTICO (TERCEIRA PRIORIDADE):**
   - Use `SituacaoNF` para o estado físico (ex: "em trânsito", "retida", "com situação logística entregue") quando não houver um evento de data explícito.
 
-4. **REGRA DE AMBIGUIDADE 'ENTREGUE' (PÓS-ENHANCER):**
-  - O Enhancer já diferenciou os contextos da palavra "entregue". Sua tarefa é extrair o termo canônico que você receber:
+4. **REGRA DE AMBIGUIDADE 'ENTREGUE' (PÓS-TRADUÇÃO):**
+  - Sua tradução mental já diferenciou os contextos da palavra "entregue". Sua tarefa é extrair o termo canônico que você gerou mentalmente:
   - Se a query for "entregues ontem" -> Segue a REGRA 2 (Evento de Data) -> `TipoData: '2'`, `DE: "{yesterday}"`, `ATE: "{yesterday}"`.
   - Se a query for "com situação logística ENTREGUE" -> Segue a REGRA 3 (Estado Logístico) -> `SituacaoNF: 'ENTREGUE'`.
   - Se a query for "com status de análise de performance ENTREGUE" -> Segue a REGRA 1 (Performance) -> `StatusAnaliseData: 'ENTREGUE'`.
@@ -290,52 +244,82 @@ Este sistema NÃO suporta filtros de exclusão (ex: "não", "exceto", "menos", "
   - (Vindo da antiga regra de Consistência #4)
 ---
 
-Exemplos:
+--- EXEMPLOS QUE ILUSTRAM AS REGRAS (CONSIDERE A TRADUÇÃO IMPLÍCITA) ---
 ---
-Texto: "Quais notas de operação OutBound-SPO estão com análise de performance 'ATRASO'?"
-JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": "OutBound-SPO", "SituacaoNF": null, "StatusAnaliseData": "ATRASO", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+Pergunta Original: "quais notas foram entregues hoje?"
+(Tradução Mental: "Quais notas fiscais foram entregues hoje?")
+JSON: {{"NF": null, "DE": "{today}", "ATE": "{today}", "TipoData": "2", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "notas previstas entre 1 e 15 de setembro de 2025"
-JSON: {{"NF": null, "DE": "2025-09-01", "ATE": "2025-09-15", "TipoData": "4", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
----
-Texto: "notas entregues ontem ordenadas pela data de entrega mais recente"
-JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "2", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": "data_entrega", "SortDirection": "DESC"}}
----
-Texto: "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
+Pergunta Original: "notas rodando ordenadas pelo mais caro"
+(Tradução Mental: "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor")
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": "valor_nf", "SortDirection": "DESC"}}
 ---
-Texto: "Me mostre as notas com status de análise de performance ENTREGUE"
+Pergunta Original: "nf do cli acme transp veloz com atraso"
+(Tradução Mental: "Me mostre as notas fiscais do cliente ACME da transportadora Veloz com status de análise ATRASO")
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": "acme", "Transportadora": "veloz", "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "ATRASO", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Pergunta Original: "o que foi baixado na ult sem"
+(Tradução Mental: "O que foi baixado na última semana")
+JSON: {{"NF": null, "DE": "{last_week_start}", "ATE": "{last_week_end}", "TipoData": "6", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Pergunta Original: "notas para a cidade de São Paulo"
+(Tradução Mental: "Me mostre as notas fiscais para a cidade de São Paulo")
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": "São Paulo", "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Pergunta Original: "notas com data de agenda para hoje"
+(Tradução Mental: "Notas com data de agenda para hoje")
+JSON: {{"NF": null, "DE": "{today}", "ATE": "{today}", "TipoData": "1", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Pergunta Original: "Quais notas de operação OutBound-SPO estão com análise de performance 'ATRASO'?"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": "OutBound-SPO", "SituacaoNF": null, "StatusAnaliseData": "ATRASO", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Pergunta Original: "notas previstas entre 1 e 15 de setembro de 2025"
+JSON: {{"NF": null, "DE": "2025-09-01", "ATE": "2025-09-15", "TipoData": "4", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Pergunta Original: "notas entregues ontem ordenadas pela data de entrega mais recente"
+JSON: {{"NF": null, "DE": "{yesterday}", "ATE": "{yesterday}", "TipoData": "2", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": "data_entrega", "SortDirection": "DESC"}}
+---
+Pergunta Original: "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": "valor_nf", "SortDirection": "DESC"}}
+---
+Pergunta Original: "Me mostre as notas com status de análise de performance ENTREGUE"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "ENTREGUE", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "liste as notas emitidas hoje para SP que estão em trânsito"
+Pergunta Original: "liste as notas emitidas hoje para SP que estão em trânsito"
 JSON: {{"NF": null, "DE": "{today}", "ATE": "{today}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": "SP", "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "Quais notas foram emitidas este mês?"
+Pergunta Original: "Quais notas foram emitidas este mês?"
 JSON: {{"NF": null, "DE": "{month_start}", "ATE": "{month_end}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "Quais notas fiscais têm status de entregue?"
+Pergunta Original: "Quais notas fiscais têm status de entregue?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "ENTREGUE", "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "Me mostre as notas fiscais em trânsito E com atraso"
+Pergunta Original: "Me mostre as notas fiscais em trânsito E com atraso"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": "TRÂNSITO", "StatusAnaliseData": "ATRASO", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "qual o status da entrega?"
+Pergunta Original: "qual o status da entrega?"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "Quais notas estão previstas para daqui a 2 dias?" 
+Pergunta Original: "Quais notas estão previstas para daqui a 2 dias?" 
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "PREVISTO PARA 2 DIAS", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
-Texto: "Quais notas foram emitidas esta semana?"
+Pergunta Original: "Quais notas foram emitidas esta semana?"
 JSON: {{"NF": null, "DE": "{week_start}", "ATE": "{week_end}", "TipoData": "3", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
 ---
 
 Agora, analise o seguinte texto.
-Texto: {enhanced_query}
+Texto: {original_query}
 
 
 JSON FINAL:
 """
 JSON_PARSER_PROMPT = PromptTemplate.from_template(parser_template)
+
+
+# --- QUERY_ENHANCER_PROMPT (DESATIVADO - LEGADO) ---
+# Mantemos a variável como None para evitar quebra de imports antigos,
+# mas a lógica foi incorporada no parser_template acima.
+QUERY_ENHANCER_PROMPT = None
 
 
 """
@@ -350,9 +334,9 @@ a "pensar passo a passo" antes de gerar o JSON final, como no exemplo abaixo:
 Exemplo de Bloco CoT (Removido do parser_template):
 ------------------------------------------------------------
 Pense passo a passo antes de gerar o JSON final:
-1.  **Análise do Texto:** (Descreva brevemente o que o usuário pediu).
-2.  **Extração de Entidades:** (Liste cada entidade que você encontrou: NF, DE, ATE, TipoData, Cliente, SituacaoNF, StatusAnaliseData, SortColumn, etc.).
-3.  **Verificação de Regras:** (Verifique mentalmente as regras de prioridade. Ex: "Regra 5 (Coexistência) se aplica: SituacaoNF e StatusAnaliseData estão presentes. Regra 1 (NF) não se aplica...").
+1.  **Análise do Texto:** (Descreva brevemente o que o usuário pediu).
+2.  **Extração de Entidades:** (Liste cada entidade que você encontrou: NF, DE, ATE, TipoData, Cliente, SituacaoNF, StatusAnaliseData, SortColumn, etc.).
+3.  **Verificação de Regras:** (Verifique mentalmente as regras de prioridade. Ex: "Regra 5 (Coexistência) se aplica: SituacaoNF e StatusAnaliseData estão presentes. Regra 1 (NF) não se aplica...").
 ------------------------------------------------------------
 
 **Motivo da Desativação:**

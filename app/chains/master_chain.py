@@ -3,32 +3,24 @@
 #
 #                               MÓDULO DE ORQUESTRAÇÃO DA CADEIA DE INTERPRETAÇÃO
 #
-# Visão Geral da Arquitetura Lógica:
+# Visão Geral da Arquitetura Lógica (ATUALIZADO - MODO UNIFICADO/TURBO):
 #
-# Este arquivo constrói e orquestra as cadeias de LangChain responsáveis por interpretar
-# a linguagem natural do usuário e traduzi-la para um objeto JSON estruturado.
-# A arquitetura segue o princípio de "Separação de Responsabilidades", operando como uma
-# linha de montagem em dois estágios principais:
+# Este arquivo constrói e orquestra a cadeia de LangChain responsável por interpretar
+# a linguagem natural do usuário.
 #
-# 1. A Cadeia de Normalização (`query_enhancer_chain`):
-#    - Atua como um "Tradutor" de linguagem.
-#    - Responsabilidade: Receber a pergunta bruta do usuário e normalizá-la de forma
-#      segura e previsível, sem alterar a intenção original.
-#    - Ação: Expande abreviações (ex: "nf" -> "nota fiscal") e mapeia sinônimos de
-#      negócio (ex: "rodando" -> "em trânsito").
+# MUDANÇA ARQUITETURAL:
+# Originalmente, o sistema operava em dois estágios (Normalização -> Parsing).
+# Para reduzir a latência e custos, migramos para um estágio único UNIFICADO.
 #
-# 2. A Cadeia de Parsing (`json_parser_chain`):
-#    - Atua como um "Especialista em Extração".
-#    - Responsabilidade: Receber a pergunta já normalizada e convertê-la em um
-#      objeto JSON preciso, com base em um conjunto de regras e exemplos.
-#    - Ação: Extrai todas as entidades relevantes (datas, status, locais, ordenação)
-#      diretamente para o formato JSON.
-#    - (NOTA: A técnica Chain of Thought foi desativada por questões de performance/rate limit).
+# 1. A Cadeia Unificada (`json_parser_chain`):
+#    - Atua como "Tradutor" e "Extrator" simultaneamente.
+#    - Responsabilidade: Recebe a pergunta bruta (`original_query`), aplica as regras de
+#      normalização internamente (mentalmente) e extrai o JSON final em uma única chamada.
+#    - Ação: Input do Usuário -> Prompt Unificado -> LLM -> JSON.
 #
-# 3. Resiliência (`OutputFixingParser`):
-#    - A cadeia de parsing é equipada com um parser de auto-correção. Se o LLM gerar
-#      um JSON com erro de sintaxe, esta ferramenta automaticamente solicita ao LLM
-#      que corrija seu próprio erro, aumentando a confiabilidade do serviço.
+# 2. Resiliência:
+#    - Mantemos a estrutura preparada para `OutputFixingParser`, mas atualmente usamos
+#      `JsonOutputParser` direto para maximizar a velocidade.
 #
 # =================================================================================================
 # =================================================================================================
@@ -148,74 +140,60 @@ def _create_chains():
     Função "fábrica" auxiliar para construir e configurar os componentes base das cadeias.
     Esta função é chamada uma vez na inicialização para criar os objetos reutilizáveis.
     """
-    # llm = get_llm_google()
+    llm = get_llm_google()
     # llm = get_llm_groq()
-    llm = get_llm_openai()
+    # llm = get_llm_openai()
 
-    # --- Definição da Cadeia de Normalização (Enhancer) com Timing ---
-    # Passo 1: Prepara o prompt e o LLM
-    enhancer_prompt_llm = QUERY_ENHANCER_PROMPT | llm
-
-    query_enhancer_chain = (
-        # Passo A: Captura o tempo inicial ANTES da chamada LLM
-        RunnablePassthrough.assign(start_time=lambda x: time.time())
-        # Passo B: Executa a chamada LLM principal (Prompt + LLM). O resultado é AIMessage.
-        .assign(llm_output=lambda x: enhancer_prompt_llm.invoke(x))
-        # Passo C: Loga o tempo usando o start_time e o llm_output, e retorna o llm_output (AIMessage)
-        | RunnableLambda(lambda x: log_llm_call_time("Enhancer", x['start_time'], x['llm_output']))
-        # Passo D: Aplica o StrOutputParser DEPOIS do log, para converter AIMessage -> string
-        | StrOutputParser()
-    )
-
-    # --- Definição da Cadeia de Parsing com Auto-Correção e Timing ---
-    output_fixing_parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
-    # Parser simples (substituir o output fixing parser)
+    # --- Definição da Cadeia de Normalização (Enhancer) ---
+    # [ATUALIZAÇÃO TURBO]: O Enhancer foi incorporado ao Parser Unificado.
+    # Não instanciamos mais o query_enhancer_chain separado para economizar tempo.
+    
+    # --- Definição da Cadeia de Parsing Unificada com Timing ---
+    
+    # output_fixing_parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
+    # Parser simples (substitui o output fixing parser para velocidade máxima)
     json_parser = JsonOutputParser()
-    # Passo 1 (Parser): Prepara o prompt e o LLM principal
+
+    # Passo 1 (Parser Unificado): Prepara o prompt e o LLM principal
     parser_prompt_llm = JSON_PARSER_PROMPT | llm
 
     json_parser_chain = (
-        # Passo A (Parser): Captura o tempo inicial ANTES da chamada LLM principal
+        # Passo A: Captura o tempo inicial ANTES da chamada LLM principal
         RunnablePassthrough.assign(start_time=lambda x: time.time())
-        # Passo B (Parser): Executa a chamada LLM principal (Prompt + LLM). O resultado é AIMessage.
-        .assign(llm_output=lambda x: parser_prompt_llm.invoke(x)) # <<< CORREÇÃO APLICADA AQUI (remove StrOutputParser daqui)
-        # Passo C (Parser): Loga o tempo usando o start_time e o llm_output, e retorna o llm_output (AIMessage)
-        | RunnableLambda(lambda x: log_llm_call_time("Parser", x['start_time'], x['llm_output']))
-        # Passo D (Parser): Aplica o StrOutputParser DEPOIS do log, para converter AIMessage -> string
+        # Passo B: Executa a chamada LLM principal (Prompt + LLM). O resultado é AIMessage.
+        .assign(llm_output=lambda x: parser_prompt_llm.invoke(x))
+        # Passo C: Loga o tempo usando o start_time e o llm_output
+        | RunnableLambda(lambda x: log_llm_call_time("UnifiedParser", x['start_time'], x['llm_output']))
+        # Passo D: Aplica o StrOutputParser DEPOIS do log
         | StrOutputParser()
         # [CoT DESATIVADO] - A linha abaixo seria necessária se CoT estivesse ativo
         # | RunnableLambda(_extract_json_from_output)
-        # Passo E (Parser): Passa a string (idealmente JSON) para o OutputFixingParser
+        # Passo E: Parser final para JSON
         # | output_fixing_parser # Substituído por json_parser para testes sem auto-correção
         | json_parser
     )
 
-    return query_enhancer_chain, json_parser_chain
+    # Retornamos apenas o parser chain agora (o enhancer é None ou ignorado)
+    return None, json_parser_chain
 
 
 
 def create_master_chain() -> Runnable:
     """
     Cria a cadeia principal de PRODUÇÃO.
-    Esta cadeia orquestra o fluxo completo, injetando as datas atuais a cada
-    execução, passando pela normalização e pelo parsing, e retornando o JSON final.
+    Esta cadeia orquestra o fluxo completo (UNIFICADO), injetando as datas atuais,
+    passando a query original para o prompt unificado e retornando o JSON.
     """
-    query_enhancer_chain, json_parser_chain = _create_chains()
+    _, json_parser_chain = _create_chains()
 
-    # A linha de montagem:
-    # 1. RunnablePassthrough.assign(dates=...): Calcula as datas atuais e adiciona ao fluxo.
-    # 2. .assign(enhanced_query=...): Passa o fluxo (query + datas) para o Enhancer (com timing)
-    #    e adiciona o resultado como 'enhanced_query'.
-    # 3. | (lambda...): Reorganiza o dicionário para preparar a entrada do Parser,
-    #    colocando 'dates' e 'enhanced_query' no nível raiz.
-    # 4. | json_parser_chain: Passa o dicionário preparado para a cadeia de parsing (com timing),
-    #    que gera o JSON final.
+    # A linha de montagem simplificada (Modo Turbo):
+    # 1. RunnablePassthrough.assign(dates=...): Calcula as datas atuais.
+    # 2. Renomeia a entrada 'query' para 'original_query' (esperado pelo novo prompt).
+    # 3. | json_parser_chain: Executa a extração direta.
     master_chain = (
         RunnablePassthrough.assign(dates=_get_current_dates)
-        .assign(
-            enhanced_query=query_enhancer_chain
-        )
-        | (lambda x: {**x["dates"], "enhanced_query": x["enhanced_query"]})
+        .assign(original_query=lambda x: x["query"])
+        | (lambda x: {**x["dates"], "original_query": x["original_query"]})
         | json_parser_chain
     )
     return master_chain
@@ -223,69 +201,46 @@ def create_master_chain() -> Runnable:
 def create_debug_chain() -> Runnable:
     """
     Cria a cadeia de DEBUG.
-    Funciona de forma idêntica à master_chain, mas retorna os resultados de cada
-    passo intermediário ('dates', 'enhanced_query', 'parsed_json') para facilitar a depuração.
-    Inclui o timing das chamadas LLM.
+    Funciona de forma idêntica à master_chain na nova arquitetura unificada.
     """
-    query_enhancer_chain, json_parser_chain = _create_chains()
+    _, json_parser_chain = _create_chains()
 
-    # Prepara o passo de transformação de dados para o parser (idêntico ao master_chain)
-    debug_parser_input = (lambda x: {**x["dates"], "enhanced_query": x["enhanced_query"]})
+    # Prepara o passo de transformação de dados para o parser
+    debug_parser_input = (lambda x: {**x["dates"], "original_query": x["original_query"]})
 
     # A linha de montagem de debug:
-    # Executa os mesmos passos do master_chain, mas usa .assign() extra
-    # para preservar os resultados intermediários ('dates', 'enhanced_query')
-    # e adicionar o resultado final do parser sob a chave 'parsed_json'.
-    # O timing já está embutido nas cadeias base criadas por _create_chains().
     debug_chain = (
-        RunnablePassthrough.assign(dates=_get_current_dates) # Passo 1: Calcula datas
+        RunnablePassthrough.assign(dates=_get_current_dates)
+        .assign(original_query=lambda x: x["query"])
         .assign(
-            enhanced_query=query_enhancer_chain # Passo 2: Roda o Enhancer (com timing)
-        ).assign( # Passo 3 & 4 combinados: Prepara input, Roda Parser (com timing) e guarda resultado
             parsed_json = debug_parser_input | json_parser_chain
         )
     )
     return debug_chain
 
 # =================================================================================================
-# Análise de Fluxo e Dados das Cadeias (Chains)
+# Análise de Fluxo e Dados das Cadeias (Chains) - ATUALIZADO
 # =================================================================================================
 #
-# 1. query_enhancer_chain
-# Propósito: Normalizar a pergunta do usuário de forma segura, traduzindo sinônimos.
+# 1. json_parser_chain (UNIFICADO)
+# Propósito: Receber a pergunta bruta e converter DIRETAMENTE em JSON estruturado.
 # Fluxo Detalhado:
-#   1. Recebe a pergunta do usuário (ex: "notas rodando").
-#   2. Monta o QUERY_ENHANCER_PROMPT com a pergunta.
-#   3. (Timing Inicia) Envia para o LLM, que traduz para os termos de negócio (ex: "notas em trânsito"). (Timing Termina)
-#   4. O StrOutputParser garante que a saída seja uma string de texto limpa.
-# Exemplo de Entrada:
-#   { "query": "notas rodando ordenadas pelo mais caro", "dates": { ... } }
-# Exemplo de Saída (string):
-#   "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
-#
-# -------------------------------------------------------------------------------------------------
-#
-# 2. json_parser_chain
-# Propósito: Converter a pergunta normalizada em um objeto JSON estruturado.
-# Fluxo Detalhado (CoT Desativado):
-#   1. Recebe o dicionário completo com a pergunta normalizada ('enhanced_query') e todas as datas.
-#   2. O JSON_PARSER_PROMPT usa as chaves do dicionário para preencher todas as suas
-#      variáveis (ex: {today}, {week_start}, {enhanced_query}).
-#   3. (Timing Inicia) Envia para o LLM, que gera uma string (idealmente formatada como JSON). (Timing Termina)
-#   4. O StrOutputParser captura essa string de saída.
-#   5. O OutputFixingParser tenta parsear a string como JSON. Se falhar, ele pede ao LLM
-#      (internamente, sem timing explícito aqui) para corrigir a sintaxe e tenta parsear novamente.
+#   1. Recebe o dicionário com 'original_query' e todas as datas.
+#   2. O JSON_PARSER_PROMPT (Unificado) aplica as regras de tradução mentalmente.
+#   3. (Timing Inicia) Envia para o LLM. (Timing Termina)
+#   4. O StrOutputParser captura a string de saída.
+#   5. O JsonOutputParser converte a string para objeto Python.
 # Exemplo de Entrada:
 #   {
-#     "today": "2025-10-27", "last_week_start": "2025-10-20", ...
-#     "enhanced_query": "Me mostre as notas fiscais em trânsito ordenadas pelo maior valor"
+#     "today": "2025-10-27", ...
+#     "original_query": "notas rodando ordenadas pelo mais caro"
 #   }
-# Exemplo de Saída (objeto Python após parsing):
+# Exemplo de Saída:
 #   {
 #     "SituacaoNF": "TRÂNSITO",
 #     "SortColumn": "valor_nf",
 #     "SortDirection": "DESC",
-#     ... (outros campos nulos)
+#     ...
 #   }
 #
 # =================================================================================================
