@@ -2,7 +2,9 @@ from langchain_groq import ChatGroq
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 import os
+from functools import lru_cache
 
+@lru_cache(maxsize=1)
 def get_llm_groq():
     """
     Cria e retorna uma instância do LLM da Groq configurado para respostas rápidas.
@@ -18,6 +20,7 @@ def get_llm_groq():
     return llm
 
 
+@lru_cache(maxsize=1)
 def get_llm_google():
     """
     Retorna uma instância configurada do modelo Google Gemini via Google AI Studio.
@@ -35,6 +38,7 @@ def get_llm_google():
     # Retorna a instância configurada do LLM
     return llm
 
+@lru_cache(maxsize=1)
 def get_llm_openai():
     """
     Retorna uma instância configurada do modelo OpenAI (GPT).

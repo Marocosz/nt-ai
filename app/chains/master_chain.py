@@ -169,6 +169,8 @@ def _create_chains():
 
     # --- Definição da Cadeia de Parsing com Auto-Correção e Timing ---
     output_fixing_parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
+    # Parser simples (substituir o output fixing parser)
+    json_parser = JsonOutputParser()
     # Passo 1 (Parser): Prepara o prompt e o LLM principal
     parser_prompt_llm = JSON_PARSER_PROMPT | llm
 
@@ -184,7 +186,8 @@ def _create_chains():
         # [CoT DESATIVADO] - A linha abaixo seria necessária se CoT estivesse ativo
         # | RunnableLambda(_extract_json_from_output)
         # Passo E (Parser): Passa a string (idealmente JSON) para o OutputFixingParser
-        | output_fixing_parser
+        # | output_fixing_parser # Substituído por json_parser para testes sem auto-correção
+        | json_parser
     )
 
     return query_enhancer_chain, json_parser_chain
