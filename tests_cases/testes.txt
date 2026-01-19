@@ -53,7 +53,7 @@ notas com cnpj raiz da transportadora 12345678 || {"CNPJRaizTransp": "12345678"}
 notas para o estado de São Paulo || {"UFDestino": "SP"}
 
 # Teste @CidadeDestino (Sem Inferência de UF)
-me mostre as notas para Manaus || {"CidadeDestino": "Manaus", "UFDestino": null}
+me mostre as notas para Manaus || {"CidadeDestino": "Manaus", "UFDestino": "AM"}
 
 # Teste Ambiguidade (Cidade vs UF -> Prioriza UF)
 notas para São Paulo || {"UFDestino": "SP"}

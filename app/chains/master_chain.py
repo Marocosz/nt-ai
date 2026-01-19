@@ -88,6 +88,7 @@ def _get_current_dates(data_passthrough):
     # Retorna um dicionário com todas as datas formatadas como string.
     return {
         "today": today.strftime('%Y-%m-%d'),
+        "tomorrow": (today + timedelta(days=1)).strftime('%Y-%m-%d'), # [CORREÇÃO] Adicionado para evitar erro no Prompt
         "yesterday": (today - timedelta(days=1)).strftime('%Y-%m-%d'),
 
         # "last_week_start" agora se refere ao início da semana de calendário passada (Segunda).
@@ -151,6 +152,7 @@ def _create_chains():
     llm = get_llm_openai()
 
     # --- Definição da Cadeia de Normalização (Enhancer) ---
+    # [ATUALIZAÇÃO TURBO]: O Enhancer foi incorporado ao Parser Unificado.
     # Não instanciamos mais o query_enhancer_chain separado para economizar tempo.
     
     # --- Definição da Cadeia de Parsing Unificada com Timing ---

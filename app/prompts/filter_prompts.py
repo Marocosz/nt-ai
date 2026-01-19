@@ -153,16 +153,17 @@ A seguir estão as três interpretações possíveis para um status. Você deve 
 
 --- REGRAS DE LÓGICA E PRIORIDADE (LEIA COM ATENÇÃO) ---
 
-1. **REGRA DE PRECEDÊNCIA DE PERFORMANCE (PRIORIDADE MÁXIMA):**
-   - O Enhancer já traduziu frases de performance para termos canônicos (ex: "com status de análise...").
-   - Se você identificar um desses **Termos de Performance** (ex: "ATRASO", "DIA SEGUINTE", "DO DIA", "PREVISTO PARA 2 DIAS"), eles TÊM PRIORIDADE sobre eventos de data genéricos.
-   - **Ação Padrão:** Preencha `StatusAnaliseData` com o valor correspondente.
-   - **TRAVA DE SEGURANÇA (CASOS DE PREVISÃO):** Se a frase for especificamente "prevista para hoje", "previsto para amanhã" ou "previsto para daqui a 2 dias", você está **PROIBIDO** de preencher os campos `TipoData` ou `DE`/`ATE`. Nestes casos específicos, o "previsto" é puramente um indicador de gestão (`StatusAnaliseData`), e NÃO um filtro de calendário.
+1. **REGRA DE "TERMOS TÉCNICOS DE DATA" (PRIORIDADE SUPREMA):**
+   - Se a frase contiver EXATAMENTE **"data de agenda"**, **"agenda"** ou **"previsão real"**, você DEVE tratar isso como `TipoData` (Valores 1 ou 5).
+   - **Neste caso, IGNORE qualquer regra de status de performance.**
+   - Ex: "agenda para amanhã" -> TipoData="1", DE="{tomorrow}", StatusAnaliseData=null. (O termo 'agenda' vence o termo 'amanhã').
 
-2. **REGRA DE EVENTO DE DATA (SEGUNDA PRIORIDADE):**
- - Use esta regra se a REGRA 1 não se aplicar.
- - Se uma frase contém AMBOS um **evento de data** (palavras como 'emitido', 'entregue', 'baixado', 'previsto', 'agendado', 'previsão real') E um **período de tempo** (palavras como 'hoje', 'ontem', 'nesta semana', 'em setembro'), sua tarefa é preencher AMBOS os campos: `TipoData` com o código do evento E `DE`/`ATE` com o período de tempo.
-
+2. **REGRA DE PRECEDÊNCIA DE PERFORMANCE (PRIORIDADE ALTA):**
+   - (Só se aplica se a Regra 1 não for ativada).
+   - Se o usuário disser "previsto para hoje", "previsto para amanhã" ou "previsto para daqui a 2 dias", isso é um STATUS (`StatusAnaliseData`).
+   - **Ação:** Preencha `StatusAnaliseData` (DO DIA, DIA SEGUINTE, etc).
+   - **Proibição:** Nestes casos de status, NÃO preencha `TipoData`.
+   
 3. **REGRA DE ESTADO LOGÍSTICO (TERCEIRA PRIORIDADE):**
  - Use `SituacaoNF` para o estado físico (ex: "em trânsito", "retida", "com situação logística entregue") quando não houver um evento de data explícito.
 
@@ -172,13 +173,17 @@ A seguir estão as três interpretações possíveis para um status. Você deve 
  - Se a query for "com situação logística ENTREGUE" -> Segue a REGRA 3 (Estado Logístico) -> `SituacaoNF: 'ENTREGUE'`.
  - Se a query for "com status de análise de performance ENTREGUE" -> Segue a REGRA 1 (Performance) -> `StatusAnaliseData: 'ENTREGUE'`.
 
-5. **REGRA DE LOCALIZAÇÃO (SEM INFERÊNCIA):**
- - Você NÃO DEVE inferir o `UFDestino` a partir da `CidadeDestino` (ex: 'Manaus' -> `CidadeDestino: "Manaus"`, `UFDestino: null`), a menos que o nome seja ambíguo (ex: 'São Paulo' -> `UFDestino: "SP"` E `CidadeDestino: "São Paulo"` se a frase for "cidade de São Paulo").
- 
---- Regras de Localização ---
-- Se o usuário mencionar uma sigla de 2 letras da lista de "UFDestino", preencha o campo "UFDestino".
-- Se um nome pode ser tanto cidade quanto estado (ex: "São Paulo"), priorize o preenchimento de "UFDestino" com a sigla correspondente (ex: "SP"), a menos que o usuário especifique "cidade de".
-- Extraia o nome da cidade para "CidadeDestino" sempre que possível.
+5. **REGRA DE LOCALIZAÇÃO (GEOGRAFIA INTELIGENTE):**
+ - **ESTADOS POR EXTENSO:** Se o usuário digitar o nome de um estado (ex: "Minas Gerais", "Rio de Janeiro", "Bahia", "São Paulo"), você DEVE:
+   1. Converter para a sigla correspondente no campo `UFDestino` (ex: "MG", "RJ", "BA", "SP").
+   2. **OBRIGATÓRIO:** Deixar o campo `CidadeDestino` como `null`. **NUNCA** preencha o nome do estado no campo cidade.
+   - *Exemplo:* "notas para minas gerais" -> `UFDestino: "MG"`, `CidadeDestino: null`.
+   
+ - **AMBIGUIDADE CIDADE/ESTADO:** Se o nome for ambíguo (ex: "São Paulo", "Rio de Janeiro"):
+   - Se for genérico ("para São Paulo") -> Assuma ESTADO (`UFDestino: "SP"`, `CidadeDestino: null`).
+   - Se for específico ("cidade de São Paulo", "capital") -> Assuma CIDADE (`UFDestino: "SP"`, `CidadeDestino: "São Paulo"`).
+
+ - **CIDADES SEM ESTADO:** Você NÃO DEVE inferir a UF se o usuário disser apenas a cidade (ex: 'Manaus' -> `CidadeDestino: "Manaus"`, `UFDestino: null`), a menos que seja um caso de ambiguidade acima.
 
 --- REGRAS DE PRECISÃO ---
 1. Extração Completa de Datas: Se você identificar um período de tempo (ex: "ontem", "hoje"), você DEVE preencher os campos "DE" e "ATE" com as datas correspondentes (use o DICIONÁRIO DE VARIÁVEIS DE TEMPO).
@@ -305,6 +310,16 @@ JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, 
 ---
 Pergunta Original: "mostre as notas previstas para hoje"
 JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DO DIA", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Pergunta Original: "notas com data de agenda para amanhã"
+JSON: {{"NF": null, "DE": "{tomorrow}", "ATE": "{tomorrow}", "TipoData": "1", "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Pergunta Original: "notas previstas para hoje"
+JSON: {{"NF": null, "DE": null, "ATE": null, "TipoData": null, "Cliente": null, "Transportadora": null, "UFDestino": null, "CidadeDestino": null, "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": "DO DIA", "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
+Pergunta Original: "quais notas da transportadora RápidoLog para Manaus foram baixadas na semana passada?"
+JSON: {{"NF": null, "DE": "{last_week_start}", "ATE": "{last_week_end}", "TipoData": "6", "Cliente": null, "Transportadora": "RápidoLog", "UFDestino": "AM", "CidadeDestino": "Manaus", "Operacao": null, "SituacaoNF": null, "StatusAnaliseData": null, "CNPJRaizTransp": null, "SortColumn": null, "SortDirection": null}}
+---
 
 Agora, analise o seguinte texto.
 Texto: {original_query}
