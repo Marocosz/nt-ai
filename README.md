@@ -1,7 +1,7 @@
 ![Cabeçalho README](cabecalho.jpg)
 # 🤖 New Tracking - Intent AI
 
-> New Tracking - Intent AI é um microsserviço especializado em traduzir linguagem natural para filtros estruturados. Construído com Python, FastAPI e LangChain, este sistema atua como o "cérebro da interpretação" para a plataforma New Tracking. Ele recebe perguntas de usuários em português, as normaliza e converte em um objeto JSON preciso, que é então consumido pelo NT API backend para consultar uma procedure no banco de dados (SP_TK_NOTAS_AI_HOM). Com uma arquitetura de duas cadeias de IA, o serviço lida com sinônimos, ambiguidades e lógicas de data complexas, permitindo uma interação conversacional poderosa com os dados logísticos.
+> New Tracking - Intent AI é um microsserviço especializado em traduzir linguagem natural para filtros estruturados. Construído com Python, FastAPI e LangChain, este sistema atua como o "cérebro da interpretação" para a plataforma New Tracking. Ele recebe perguntas de usuários em português, as normaliza e converte em um objeto JSON preciso, que é então consumido pelo NT API backend para consultar uma procedure no banco de dados (SP_TK_NOTAS_AI_HOM). Com uma arquitetura de prompt unificado e regras de geolocalização inteligentes, o serviço lida com sinônimos, ambiguidades e lógicas de data complexas, permitindo uma interação conversacional poderosa com os dados logísticos.
 
 # 🗂️ Índice
 - [🤖 New Tracking - Intent AI](#-new-tracking---intent-ai)
@@ -59,8 +59,7 @@ Para fins de desenvolvimento, depuração e demonstração, o repositório cont�
 -   **Testar Queries Individuais:** Enviar perguntas em linguagem natural de forma rápida, sem a necessidade de usar um cliente de API como o Postman.
 -   **Visualizar o Fluxo de IA:** Observar em tempo real a transformação dos dados em cada etapa da cadeia:
     1.  A query original do usuário.
-    2.  A versão normalizada pela cadeia `Enhancer`.
-    3.  O objeto JSON final extraído pela cadeia `Parser`.
+    2.  O objeto JSON final extraído pela cadeia `Parser` Unificada.
 -   **Depurar e Validar:** Validar instantaneamente o resultado das alterações nos prompts, tornando o processo de "prompt engineering" muito mais eficiente.
 
 > [!NOTE]
@@ -94,7 +93,7 @@ Para fins de desenvolvimento, depuração e demonstração, o repositório cont�
 ├── 📁 tests_cases
 │   ├── 📄 testes.txt
 │   └── 📄 testes_pontuais.txt
-├── 📁 venvntia
+├── 📁 venvntai
 ├── 🔒 .env
 ├── 🔒 .env.example
 ├── 📄 .gitignore
@@ -108,9 +107,10 @@ Para fins de desenvolvimento, depuração e demonstração, o repositório cont�
 > [!NOTE]
 > Versão 1
 
-| Versão | Data       | Mudanças principais               |
-|--------|------------|-----------------------------------|
-| 1.0    | 22/10/2025 | MVP funcional
+| Versão | Data       | Mudanças principais                               |
+|--------|------------|---------------------------------------------------|
+| 1.0    | 22/10/2025 | MVP funcional                                     |
+| 1.1    | 19/01/2026 | Geografia Inteligente e Arquitetura Unificada     |
 
 
 ## Nota sobre Chain of Thought (CoT) - Desativado 
@@ -212,26 +212,20 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
 
     - **Ação:** A cada requisição, a função _get_current_dates calcula dinamicamente todos os períodos relevantes (hoje, ontem, semana de calendário, mês de calendário, etc.) e os injeta no fluxo de dados.
 
-2. **O Tradutor (query_enhancer_chain):**
+2. **O Tradutor + Extrator Unificado (json_parser_chain):**
 
-    **- Responsabilidade:** Normalizar a pergunta do usuário de forma segura.
+    **- Responsabilidade:** Receber a pergunta bruta, normalizar a intenção e extrair os filtros em um passo otimizado.
 
-    **- Ação:** Recebe a pergunta bruta e a traduz para os termos de negócio, expandindo abreviações (ex: "nf" -> "nota fiscal") sem alterar a intenção original.
+    **- Ação:** Utiliza o `JSON_PARSER_PROMPT` que contém todo o conhecimento de regras de negócio, sinônimos e formatação JSON.
 
-3. **O Especialista em Extração (json_parser_chain):**
+3. **Resiliência com OutputFixingParser:**
 
-    - **Responsabilidade:** Converter a pergunta já normalizada em um objeto JSON estruturado.
+    - **Responsabilidade:** Garantir que a saída seja sempre um JSON sintaticamente válido.
 
-    - **Ação:** Recebe a pergunta clara e os dados de tempo e, com base em regras e exemplos, extrai todas as entidades (status, locais, ordenação) para o formato JSON final.
-
-4. **Resiliência com OutputFixingParser:**
-
-    - **esponsabilidade:** Garantir que a saída seja sempre um JSON sintaticamente válido.
-
-    - **Ação:** Se o LLM gerar um JSON com erro de sintaxe, esta ferramenta automaticamente solicita ao LLM que corrija seu próprio erro antes de retornar o resultado
+    - **Ação:** Se o LLM gerar um JSON com erro de sintaxe, esta ferramenta automaticamente solicita ao LLM que corrija seu próprio erro antes de retornar o resultado.
 
 **Funcionalidades Adicionais:**
-* **Logging de Performance:** Inclui lógica para registrar o tempo gasto em cada chamada principal ao LLM (Enhancer e Parser).
+* **Logging de Performance:** Inclui lógica para registrar o tempo gasto na chamada ao LLM.
 * **Cadeias `master` e `debug`:** Define ambas as cadeias, sendo que a `debug` expõe resultados intermediários.
 
 ## [`app/prompts/filter_prompts.py`](.app/prompts/filter_prompts.py)
@@ -240,15 +234,11 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
 
 **Componentes Principais:**
 
-1. **QUERY_ENHANCER_PROMPT (O Tradutor):**
-
-    - Contém as "Regras de Ouro" que proíbem a IA de adicionar ou remover informações, garantindo a preservação da intenção do usuário.
-
-    - Define um dicionário de mapeamento de sinônimos (ex: "rodando", "viajando" -> "em trânsito") e abreviações.
-
-2. **JSON_PARSER_PROMPT (O Especialista em Extração):**
+1. **JSON_PARSER_PROMPT (O Cérebro Unificado):**
 
     - Define o "schema" do JSON de saída, listando todas as entidades que a IA deve extrair.
+
+    - **Regras de Geografia Inteligente:** Contém lógica específica para diferenciar quando um usuário cita um Estado (ex: "Minas Gerais" -> UF: MG, Cidade: null) de quando cita uma cidade, evitando buscas vazias no banco de dados.
 
     - Contém seções de regras detalhadas para lidar com ambiguidades (entregue com data vs. entregue como status), precisão de datas (períodos relativos vs. de calendário) e hierarquias (prioridade de filtros).
 
@@ -263,7 +253,7 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
 
 - `scripts/debug_runner.py:` Uma ferramenta de linha de comando para executar o roteiro de testes (ex: testes_completos.txt) de forma automatizada, exibindo os resultados de cada query diretamente no terminal. É essencial para a validação em lote.
 
-- `scripts/test_ui.py:` Lança uma interface web local com Streamlit, ideal para testes individuais, prototipação rápida de novas regras de prompt e demonstrações visuais do fluxo da IA.
+- `scripts/test_ui.py:` Lança uma interface web local com Streamlit, ideal para testes rápidos individuais e visualização do fluxo da IA.
 
 - `tests_case/:` Armazena os arquivos .txt que contêm as frases em linguagem natural usadas como entrada para os testes de integração, servindo como a "fonte da verdade" para validar o comportamento da IA.
 
@@ -344,7 +334,6 @@ A arquitetura segue o princípio de "Separação de Responsabilidades", operando
           "semester_start": "2025-07-01",
           "semester_end": "2025-12-31"
       },
-      "enhanced_query": "Quais notas fiscais foram entregues hoje para o cliente BEXX?",
       "parsed_json": {
           "NF": null,
           "DE": "2025-10-23",
@@ -430,7 +419,7 @@ Antes de começar, garanta que seu sistema possui as ferramentas essenciais para
 1.  **Clonar o Repositório:**
     Abra seu terminal ou Git Bash e clone o projeto:
     ```bash
-    git clone https://github.com/Marocosz/nt-ai
+    git clone [https://github.com/Marocosz/nt-ai](https://github.com/Marocosz/nt-ai)
     cd nt-ai
     ```
 
