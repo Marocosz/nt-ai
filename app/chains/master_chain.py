@@ -1,7 +1,7 @@
 # =================================================================================================
 # =================================================================================================
 #
-#                               MÓDULO DE ORQUESTRAÇÃO DA CADEIA DE INTERPRETAÇÃO
+#                               MÓDULO DE ORQUESTRAÇÃO DA CADEIA DE INTERPRETAÇÃO
 #
 # Visão Geral da Arquitetura Lógica (ATUALIZADO - MODO UNIFICADO/TURBO):
 #
@@ -13,14 +13,14 @@
 # Para reduzir a latência e custos, migramos para um estágio único UNIFICADO.
 #
 # 1. A Cadeia Unificada (`json_parser_chain`):
-#    - Atua como "Tradutor" e "Extrator" simultaneamente.
-#    - Responsabilidade: Recebe a pergunta bruta (`original_query`), aplica as regras de
-#      normalização internamente (mentalmente) e extrai o JSON final em uma única chamada.
-#    - Ação: Input do Usuário -> Prompt Unificado -> LLM -> JSON.
+#    - Atua como "Tradutor" e "Extrator" simultaneamente.
+#    - Responsabilidade: Receber a pergunta bruta (`original_query`), aplica as regras de
+#      normalização internamente (mentalmente) e extrai o JSON final em uma única chamada.
+#    - Ação: Input do Usuário -> Prompt Unificado -> LLM -> JSON.
 #
 # 2. Resiliência:
-#    - Mantemos a estrutura preparada para `OutputFixingParser`, mas atualmente usamos
-#      `JsonOutputParser` direto para maximizar a velocidade.
+#    - Mantemos a estrutura preparada para `OutputFixingParser`, mas atualmente usamos
+#      `JsonOutputParser` direto para maximizar a velocidade.
 #
 # =================================================================================================
 # =================================================================================================
@@ -33,7 +33,8 @@ from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLamb
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain.output_parsers import OutputFixingParser
 from app.core.llm import get_llm_google, get_llm_groq, get_llm_openai
-from app.prompts.filter_prompts import QUERY_ENHANCER_PROMPT, JSON_PARSER_PROMPT
+# [Melhoria] Removido QUERY_ENHANCER_PROMPT pois não é mais utilizado
+from app.prompts.filter_prompts import JSON_PARSER_PROMPT
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -46,7 +47,7 @@ try:
     APP_TZ = ZoneInfo(HARDCODED_TIMEZONE_STR)
     logger.info(f"Usando timezone (hardcoded): {HARDCODED_TIMEZONE_STR}")
 except ZoneInfoNotFoundError:
-    # Fallback muito improvável com string hardcoded válida, mas seguro ter.
+    # Fallback seguro para evitar crash em containers minimalistas
     logger.error(f"Timezone hardcoded '{HARDCODED_TIMEZONE_STR}' é inválido! Usando UTC como fallback.")
     APP_TZ = ZoneInfo("UTC")
 # --- Fim da Configuração do Timezone ---
@@ -61,11 +62,16 @@ def _get_current_dates(data_passthrough):
     mas não é utilizado aqui; está presente para compatibilidade com o `.assign()`.
     """
     today = datetime.now(APP_TZ)
+    
+    # Lógica ISO: weekday() retorna 0 para Segunda-feira e 6 para Domingo.
+    # Isso alinha o Backend com o Script de Testes.
     start_of_week = today - timedelta(days=today.weekday())
     end_of_week = start_of_week + timedelta(days=6)
+    
     start_of_month = today.replace(day=1)
     days_in_month = calendar.monthrange(today.year, today.month)[1]
     end_of_month = today.replace(day=days_in_month)
+    
     if today.month <= 6:
         start_of_semester = today.replace(month=1, day=1)
         end_of_semester = today.replace(month=6, day=30)
@@ -73,7 +79,7 @@ def _get_current_dates(data_passthrough):
         start_of_semester = today.replace(month=7, day=1)
         end_of_semester = today.replace(month=12, day=31)
 
-    # `start_of_week` é esta segunda-feira (ou o dia atual se for segunda).
+    # `start_of_week` é esta segunda-feira.
     # Subtrai 1 dia para obter o domingo passado (fim da última semana).
     end_of_last_week = start_of_week - timedelta(days=1)
     # Subtrai 6 dias do domingo passado para obter a segunda-feira passada (início da última semana).
@@ -84,7 +90,7 @@ def _get_current_dates(data_passthrough):
         "today": today.strftime('%Y-%m-%d'),
         "yesterday": (today - timedelta(days=1)).strftime('%Y-%m-%d'),
 
-        # "last_week_start" agora se refere ao início da semana de calendário passada.
+        # "last_week_start" agora se refere ao início da semana de calendário passada (Segunda).
         "last_week_start": start_of_last_week.strftime('%Y-%m-%d'),
         "last_week_end": end_of_last_week.strftime('%Y-%m-%d'),
 
@@ -140,12 +146,11 @@ def _create_chains():
     Função "fábrica" auxiliar para construir e configurar os componentes base das cadeias.
     Esta função é chamada uma vez na inicialização para criar os objetos reutilizáveis.
     """
-    llm = get_llm_google()
+    # llm = get_llm_google()
     # llm = get_llm_groq()
-    # llm = get_llm_openai()
+    llm = get_llm_openai()
 
     # --- Definição da Cadeia de Normalização (Enhancer) ---
-    # [ATUALIZAÇÃO TURBO]: O Enhancer foi incorporado ao Parser Unificado.
     # Não instanciamos mais o query_enhancer_chain separado para economizar tempo.
     
     # --- Definição da Cadeia de Parsing Unificada com Timing ---
@@ -190,6 +195,8 @@ def create_master_chain() -> Runnable:
     # 1. RunnablePassthrough.assign(dates=...): Calcula as datas atuais.
     # 2. Renomeia a entrada 'query' para 'original_query' (esperado pelo novo prompt).
     # 3. | json_parser_chain: Executa a extração direta.
+    # OBS: O lambda intermediário 'flat map' mescla o dicionário de datas com a query
+    # para criar um único dicionário de input que corresponde às variáveis do PromptTemplate ({today}, {original_query}, etc).
     master_chain = (
         RunnablePassthrough.assign(dates=_get_current_dates)
         .assign(original_query=lambda x: x["query"])
@@ -225,22 +232,22 @@ def create_debug_chain() -> Runnable:
 # 1. json_parser_chain (UNIFICADO)
 # Propósito: Receber a pergunta bruta e converter DIRETAMENTE em JSON estruturado.
 # Fluxo Detalhado:
-#   1. Recebe o dicionário com 'original_query' e todas as datas.
-#   2. O JSON_PARSER_PROMPT (Unificado) aplica as regras de tradução mentalmente.
-#   3. (Timing Inicia) Envia para o LLM. (Timing Termina)
-#   4. O StrOutputParser captura a string de saída.
-#   5. O JsonOutputParser converte a string para objeto Python.
+#   1. Recebe o dicionário com 'original_query' e todas as datas.
+#   2. O JSON_PARSER_PROMPT (Unificado) aplica as regras de tradução mentalmente.
+#   3. (Timing Inicia) Envia para o LLM. (Timing Termina)
+#   4. O StrOutputParser captura a string de saída.
+#   5. O JsonOutputParser converte a string para objeto Python.
 # Exemplo de Entrada:
-#   {
-#     "today": "2025-10-27", ...
-#     "original_query": "notas rodando ordenadas pelo mais caro"
-#   }
+#   {
+#     "today": "2025-10-27", ...
+#     "original_query": "notas rodando ordenadas pelo mais caro"
+#   }
 # Exemplo de Saída:
-#   {
-#     "SituacaoNF": "TRÂNSITO",
-#     "SortColumn": "valor_nf",
-#     "SortDirection": "DESC",
-#     ...
-#   }
+#   {
+#     "SituacaoNF": "TRÂNSITO",
+#     "SortColumn": "valor_nf",
+#     "SortDirection": "DESC",
+#     ...
+#   }
 #
 # =================================================================================================

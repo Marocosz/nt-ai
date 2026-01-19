@@ -1,7 +1,7 @@
 # =================================================================================================
 # =================================================================================================
 #
-#                               SCRIPT DE TESTE DE INTEGRAÇÃO ROBUSTO (DEBUG RUNNER v2)
+#                               SCRIPT DE TESTE DE INTEGRAÇÃO ROBUSTO (DEBUG RUNNER v3 - AUDITOR)
 #
 # Visão Geral do Módulo:
 #
@@ -9,10 +9,15 @@
 # integração no microsserviço 'nt-ai'. Ele é projetado para rodar de forma autônoma
 # e lidar com falhas de rede, timeouts e limites de taxa (rate limiting) da API.
 #
+# ATUALIZAÇÃO v3 (AUDITOR):
+# Agora valida automaticamente o JSON de resposta contra um resultado esperado definido
+# no arquivo de texto (separado por '||').
+#
 # Arquitetura e Fluxo de Trabalho:
 #
 # 1. Leitura do Arquivo de Testes:
 #    - Lê um arquivo de texto linha por linha, ignorando comentários.
+#    - Faz o parse da linha para separar a PERGUNTA do JSON ESPERADO.
 #
 # 2. Execução em Loop com Retentativas (A Lógica Principal):
 #    - Itera sobre cada query. Para cada query, ele entra em um loop de "tentativa infinita".
@@ -47,6 +52,7 @@ import json
 import time
 import sys
 import datetime
+from datetime import timedelta
 from colorama import Fore, Style, init
 
 # Inicializa o colorama. `autoreset=True` garante que cada print volte ao estilo padrão.
@@ -56,138 +62,214 @@ init(autoreset=True)
 # Define as constantes usadas pelo script para facilitar a manutenção.
 
 # URL do endpoint de debug do microsserviço.
-MICROSERVICE_URL = "http://127.0.0.1:5001/debug-query"
+# ATUALIZADO: Apontando para a rota principal de produção
+MICROSERVICE_URL = "http://127.0.0.1:5001/parse-query"
 
 # Delay "amigável" entre requisições BEM-SUCEDIDAS para EVITAR o rate limit.
-DELAY_BETWEEN_REQUESTS = 5 # segundos
+# [TURBO MODE]: Reduzido drasticamente pois a API é paga.
+DELAY_BETWEEN_REQUESTS = 0.2 
 
 # Delay "de penalidade" quando um erro (timeout, erro 5xx) ocorre, para AGUARDAR o reset da API.
-RETRY_DELAY = 60 # 60 segundos
+RETRY_DELAY = 5 # 5 segundos para retry de conexão
 
 # Configurações para o "throttling em lote" para evitar banimento
-REQUESTS_PER_BATCH = 10  # Número de testes a rodar antes de uma pausa longa
-LONG_PAUSE_MINUTES = 5   # Duração da pausa longa em minutos
+# (DESATIVADAS NO MODO TURBO, mantidas apenas para referência estrutural)
+REQUESTS_PER_BATCH = 9999 
+LONG_PAUSE_MINUTES = 0   
 
+# --- Helpers de Data (CORRIGIDO PARA ISO - SEGUNDA A DOMINGO) ---
+def get_dates():
+    t = datetime.datetime.now().date()
+    y = t - timedelta(days=1)
+    
+    # Lógica ISO (Semana começa na Segunda = 0, termina Domingo = 6)
+    idx_dia_semana = t.weekday() 
+    
+    # Início desta semana (Segunda-feira)
+    start_current_week = t - timedelta(days=idx_dia_semana)
+    # Fim desta semana (Domingo)
+    end_current_week = start_current_week + timedelta(days=6)
+    
+    # Semana passada
+    start_last_week = start_current_week - timedelta(days=7)
+    end_last_week = start_current_week - timedelta(days=1)
+    
+    # Mês
+    start_month = t.replace(day=1)
+    # Gambiarra segura para fim do mês
+    next_month = t.replace(day=28) + timedelta(days=4)
+    end_month = next_month - timedelta(days=next_month.day)
 
-def run_tests(queries):
+    return {
+        "{today}": t.strftime("%Y-%m-%d"),
+        "{yesterday}": y.strftime("%Y-%m-%d"),
+        "{last_week_start}": start_last_week.strftime("%Y-%m-%d"),
+        "{last_week_end}": end_last_week.strftime("%Y-%m-%d"),
+        "{week_start}": start_current_week.strftime("%Y-%m-%d"),
+        "{week_end}": end_current_week.strftime("%Y-%m-%d"),
+        "{month_start}": start_month.strftime("%Y-%m-%d"),
+        "{month_end": end_month.strftime("%Y-%m-%d")
+    }
+
+DYNAMIC_DATES = get_dates()
+
+def parse_line(line):
+    """Separa a pergunta do JSON esperado"""
+    if "||" in line:
+        parts = line.split("||")
+        query = parts[0].strip()
+        expected_str = parts[1].strip()
+        
+        # Substitui variáveis de data
+        for k, v in DYNAMIC_DATES.items():
+            expected_str = expected_str.replace(k, v)
+            
+        try:
+            expected_json = json.loads(expected_str)
+            return query, expected_json
+        except json.JSONDecodeError:
+            return query, None
+    return line.strip(), None
+
+def validate_response(api_json, expected_json):
+    """Compara o JSON recebido com o esperado (apenas chaves presentes no esperado)"""
+    if not expected_json:
+        return True, [] # Sem expectativa, passa direto
+    
+    errors = []
+    # Tratamento caso o backend retorne lista ou dict
+    data = api_json[0] if isinstance(api_json, list) and len(api_json) > 0 else api_json
+    
+    # Se retornou vazio mas esperávamos algo
+    if (not data or (isinstance(api_json, list) and len(api_json) == 0)) and expected_json:
+         return False, ["API retornou vazio/null, mas havia expectativa de dados."]
+
+    for key, val in expected_json.items():
+        # Normaliza valores para string para comparação segura (ignora int vs str)
+        api_val = data.get(key)
+        
+        str_api = str(api_val).lower().strip() if api_val is not None else "null"
+        str_exp = str(val).lower().strip() if val is not None else "null"
+        
+        if str_api != str_exp:
+            errors.append(f"Campo '{key}': Esperado [{val}] vs Recebido [{api_val}]")
+            
+    return len(errors) == 0, errors
+
+def run_tests(raw_lines):
     """
-    Função principal que executa a suíte de testes de forma resiliente.
-    Ela recebe uma lista de queries e só passa para a próxima após o
-    sucesso (200) ou erro do cliente (4xx) da query atual. Retenta em 5xx/timeouts.
+    Função principal que executa a suíte de testes de forma resiliente e autidata.
     """
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================")
     print(f"{Style.BRIGHT}{Fore.MAGENTA} INICIANDO ROTEIRO DE TESTES - New Tracking Intent AI")
-    print(f"{Style.BRIGHT}{Fore.MAGENTA} (Modo de Lote: {REQUESTS_PER_BATCH} testes, depois pausa de {LONG_PAUSE_MINUTES} min)")
+    print(f"{Style.BRIGHT}{Fore.MAGENTA} (Modo TURBO: Sem pausas longas, API Paga)")
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================\n")
 
-    total_queries = len(queries)
-    for i, query in enumerate(queries):
+    total_queries = len(raw_lines)
+    passed_count = 0
+    failed_count = 0
+
+    for i, line in enumerate(raw_lines):
+        query, expected_json = parse_line(line)
+        
         print(f"{Style.BRIGHT}{Fore.CYAN}--- TESTE #{i+1}/{total_queries} ---")
-        print(f"{Fore.WHITE}Query Original: {query}\n")
+        print(f"{Fore.WHITE}Query: {query}")
+        if expected_json:
+            print(f"{Fore.LIGHTBLACK_EX}Expectativa: {json.dumps(expected_json, ensure_ascii=False)}")
 
         # Prepara o payload JSON para a requisição POST.
         payload = {"query": query}
 
         # --- INÍCIO DA LÓGICA DE RETENTATIVA ---
         success = False # Indica que o teste foi concluído (seja sucesso 200 ou erro 4xx)
+        
         while not success:
             try:
                 # Captura o tempo exato de início da tentativa
                 start_time_epoch = time.time()
-                start_time_str = datetime.datetime.now().strftime('%H:%M:%S')
-                print(f"{Style.DIM}{Fore.WHITE}Iniciando requisição às {start_time_str}...{Style.RESET_ALL}")
+                # start_time_str = datetime.datetime.now().strftime('%H:%M:%S')
+                # print(f"{Style.DIM}{Fore.WHITE}Iniciando requisição às {start_time_str}...{Style.RESET_ALL}")
 
                 # Faz a chamada POST para o endpoint de debug, com um timeout de 120 segundos.
                 response = requests.post(MICROSERVICE_URL, json=payload, timeout=120)
 
                 # Processa a resposta baseada no status code
                 if response.status_code == 200:
-                    # SUCESSO NORMAL (200 OK)
+                    # SUCESSO DE CONEXÃO (200 OK)
                     end_time_epoch = time.time()
-                    end_time_str = datetime.datetime.now().strftime('%H:%M:%S')
                     duration = end_time_epoch - start_time_epoch
 
                     # Extrai os dados da resposta JSON.
                     result_data = response.json()
-                    enhanced_query = result_data.get("enhanced_query", "ERRO: Não foi possível gerar a query otimizada.")
-                    parsed_json = result_data.get("parsed_json", {}) # Garante que temos o dict aqui
+                    
+                    # --- VALIDAÇÃO DE CONTEÚDO (AUDITORIA) ---
+                    is_valid, validation_errors = validate_response(result_data, expected_json)
 
-                    # Exibe os resultados formatados no console.
-                    print(f"{Fore.YELLOW}1. Query Otimizada (pela IA):")
-                    print(f"{Style.NORMAL}{Fore.YELLOW}{enhanced_query}\n")
-                    print(f"{Fore.GREEN}2. JSON de Filtros Gerado:")
-                    print(f"{Style.NORMAL}{Fore.GREEN}{json.dumps(parsed_json, indent=2, ensure_ascii=False)}\n")
-                    # Exibe o log de performance da requisição
-                    print(f"{Style.BRIGHT}{Fore.BLUE}Tempo de Resposta: {duration:.2f} segundos (Início: {start_time_str} | Fim: {end_time_str}){Style.RESET_ALL}")
+                    if is_valid:
+                        print(f"{Style.BRIGHT}{Fore.GREEN}[APROVADO] ✅ OK ({duration:.2f}s)")
+                        # [TURBO] Exibindo o JSON completo na aprovação
+                        print(f"{Style.DIM}{Fore.GREEN}{json.dumps(result_data, indent=2, ensure_ascii=False)}")
+                        passed_count += 1
+                    else:
+                        print(f"{Style.BRIGHT}{Fore.RED}[REPROVADO] ❌ Divergência encontrada! ({duration:.2f}s)")
+                        for err in validation_errors:
+                            print(f"  └─ {err}")
+                        print(f"{Fore.LIGHTRED_EX}JSON Recebido: {json.dumps(result_data, ensure_ascii=False)}")
+                        failed_count += 1
 
-                    success = True # Sai do loop while, teste concluído com sucesso
+                    success = True # Sai do loop while
 
                 elif 400 <= response.status_code < 500:
-                    # ERRO DO CLIENTE (4xx, como 400 Bad Request) - Considera como RESULTADO FINAL do teste
+                    # ERRO DO CLIENTE (4xx) - Validar se era esperado?
                     end_time_epoch = time.time()
-                    end_time_str = datetime.datetime.now().strftime('%H:%M:%S')
-                    duration = end_time_epoch - start_time_epoch
-                    error_details = "Erro desconhecido."
-                    try:
-                        error_details = response.json().get('detail', response.text)
-                    except json.JSONDecodeError:
-                        error_details = response.text
+                    
+                    error_details = response.text
+                    try: error_details = response.json().get('detail', response.text)
+                    except: pass
 
-                    # Exibe o erro 4xx como resultado do teste (em vermelho)
-                    print(f"{Fore.RED}ERRO HTTP {response.status_code} (Resultado Final): {error_details}")
-                    # Exibe o tempo que levou para obter o erro
-                    print(f"{Style.BRIGHT}{Fore.BLUE}Tempo de Resposta (para erro): {duration:.2f} segundos (Início: {start_time_str} | Fim: {end_time_str}){Style.RESET_ALL}")
+                    print(f"{Fore.RED}ERRO HTTP {response.status_code}: {error_details}")
+                    
+                    # Se esperávamos null/erro, talvez isso seja um sucesso? 
+                    # Por enquanto, contamos como falha se não for 200
+                    failed_count += 1
+                    success = True 
 
-                    success = True # Sai do loop while, teste concluído (com erro esperado ou inesperado do cliente)
+                else: 
+                    # ERRO DO SERVIDOR (5xx) - [MODIFICAÇÃO TURBO]
+                    # Não tenta infinitamente. Mostra o erro e avança.
+                    error_details = response.text
+                    try: error_details = response.json().get('detail', response.text)
+                    except: pass
 
-                else: # Inclui erros 5xx (Erro do Servidor) e outros códigos inesperados
-                    # ERRO DO SERVIDOR (5xx) ou Outro Inesperado - TENTA NOVAMENTE
-                    error_details = "Erro desconhecido."
-                    try:
-                        error_details = response.json().get('detail', response.text)
-                    except json.JSONDecodeError:
-                        error_details = response.text
-
-                    print(f"{Fore.YELLOW}ERRO na API (Status {response.status_code}): {error_details}")
-                    print(f"{Fore.YELLOW}Aguardando {RETRY_DELAY} segundos para tentar novamente a MESMA query...")
-                    time.sleep(RETRY_DELAY)
-                    # 'success' continua False, então o loop 'while' VAI repetir a tentativa
+                    print(f"{Style.BRIGHT}{Fore.RED}[FALHA CRÍTICA API] Status {response.status_code}")
+                    print(f"{Fore.RED}DETALHE: {error_details}")
+                    
+                    failed_count += 1
+                    success = True # Sai do loop (considera falha e vai pro próximo)
 
             except requests.exceptions.RequestException as e:
-                # ERRO DE REDE/TIMEOUT - TENTA NOVAMENTE
-                # Captura falhas críticas (Timeout, Conexão Recusada, DNS, etc.).
-                print(f"{Fore.RED}FALHA DE CONEXÃO/TIMEOUT: {e}")
-                print(f"{Fore.RED}Verifique se o microsserviço está rodando em {MICROSERVICE_URL}.")
-                print(f"{Fore.YELLOW}Aguardando {RETRY_DELAY} segundos para tentar novamente a MESMA query...")
+                # ERRO DE REDE/TIMEOUT - AQUI AINDA TENTA DE NOVO (Pode ser servidor down)
+                print(f"{Fore.RED}FALHA DE CONEXÃO: {e}")
+                print(f"{Fore.YELLOW}Tentando reconectar em {RETRY_DELAY} segundos...")
                 time.sleep(RETRY_DELAY)
-                # 'success' continua False, então o loop 'while' VAI repetir a tentativa
 
         # --- FIM DA LÓGICA DE RETENTATIVA ---
 
         print(f"{Style.BRIGHT}{Fore.CYAN}---------------------\n")
 
-        # Pausa "amigável" entre os testes BEM-SUCEDIDOS ou FINALIZADOS (200 ou 4xx)
+        # Pausa "amigável" [MODO TURBO]
         if i < total_queries - 1:
-            print(f"{Style.BRIGHT}{Fore.MAGENTA}Aguardando {DELAY_BETWEEN_REQUESTS} segundos antes do próximo teste...{Style.RESET_ALL}")
             time.sleep(DELAY_BETWEEN_REQUESTS)
 
-            # Lógica da pausa longa após cada lote
-            # O índice 'i' começa em 0. Então o teste #10 é i=9.
-            # (i + 1) é o número do teste.
-            # Se o número do teste for um múltiplo do tamanho do lote...
-            if (i + 1) % REQUESTS_PER_BATCH == 0:
-                long_pause_seconds = LONG_PAUSE_MINUTES * 60
-                print(f"{Style.BRIGHT}{Fore.RED}==================================================================")
-                print(f"{Style.BRIGHT}{Fore.RED} LOTE DE {REQUESTS_PER_BATCH} TESTES CONCLUÍDO.")
-                print(f"{Style.BRIGHT}{Fore.RED} INICIANDO PAUSA LONGA DE {LONG_PAUSE_MINUTES} MINUTOS PARA EVITAR BANIMENTO...")
-                # Calcula e exibe a hora aproximada de retomada
-                resume_time = datetime.datetime.now() + datetime.timedelta(seconds=long_pause_seconds)
-                print(f"{Style.BRIGHT}{Fore.RED} Próximo teste (TESTE #{i+2}) rodará aproximadamente às {resume_time.strftime('%H:%M:%S')}")
-                print(f"{Style.BRIGHT}{Fore.RED}==================================================================\n")
-                time.sleep(long_pause_seconds)
+            # Lógica da pausa longa REMOVIDA na prática (configurada para não pausar)
+            if REQUESTS_PER_BATCH < 1000 and (i + 1) % REQUESTS_PER_BATCH == 0:
+                print(f"{Style.BRIGHT}{Fore.RED} PAUSA DE LOTE...")
+                time.sleep(LONG_PAUSE_MINUTES * 60)
 
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================")
-    print(f"{Style.BRIGHT}{Fore.MAGENTA}        ROTEIRO DE TESTES FINALIZADO")
+    print(f"{Style.BRIGHT}{Fore.MAGENTA}        RELATÓRIO FINAL")
+    print(f"{Fore.GREEN} Aprovados: {passed_count}")
+    print(f"{Fore.RED} Reprovados: {failed_count}")
     print(f"{Style.BRIGHT}{Fore.MAGENTA}=============================================\n")
 
 
@@ -196,7 +278,7 @@ if __name__ == "__main__":
     # Verifica se o usuário passou o nome do arquivo de teste como argumento na linha de comando.
     if len(sys.argv) < 2:
         print(f"{Fore.RED}Erro: Por favor, especifique o nome do arquivo de testes.")
-        print(f"{Fore.YELLOW}Exemplo de uso: python scripts/debug_runner.py testes_completos.txt")
+        print(f"{Fore.YELLOW}Exemplo de uso: python scripts/debug_runner.py testes.txt")
         sys.exit(1)
 
     test_file_name = sys.argv[1]
@@ -206,10 +288,6 @@ if __name__ == "__main__":
     try:
         # Abre o arquivo de teste com codificação utf-8 para ler caracteres especiais.
         with open(test_file_path, 'r', encoding='utf-8') as f:
-            # Usa uma list comprehension para ler todas as linhas e filtrá-las:
-            # 1. line.strip(): Remove espaços em branco do início e do fim.
-            # 2. if line.strip(): Ignora linhas que ficaram vazias após o strip.
-            # 3. and not line.strip().startswith(...): Ignora linhas de comentário.
             queries_to_run = [
                 line.strip() for line in f.readlines()
                 if line.strip() and not line.strip().startswith('#') and not line.strip().startswith('=')

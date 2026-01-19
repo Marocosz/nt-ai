@@ -45,7 +45,7 @@ def get_llm_openai():
     """
     # Cria a instância do ChatOpenAI
     llm = ChatOpenAI(
-        model="gpt-5-nano", 
+        model="gpt-4.1-nano",
         temperature=0,                  
         api_key=os.getenv("OPENAI_API_KEY")  
     )

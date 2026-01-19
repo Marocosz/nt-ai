@@ -1,24 +1,15 @@
 # ====================================================================================
 # ====================================================================================
 #
-#                    ROTEIRO DE TESTES MESTRE - New Tracking Intent AI
+#                     ROTEIRO DE TESTES MESTRE - New Tracking Intent AI
 #
 # Propósito:
-# Este arquivo unifica múltiplos roteiros de teste anteriores em um único conjunto
-# abrangente e organizado. O objetivo é validar sistematicamente a capacidade
-# do microsserviço de IA de:
-#   1. Interpretar corretamente a intenção de busca do usuário em linguagem natural.
-#   2. Traduzir a intenção para um objeto JSON estruturado com filtros precisos
-#      (`NF`, `DE`, `ATE`, `TipoData`, `Cliente`, `Transportadora`, `UFDestino`,
-#      `CidadeDestino`, `Operacao`, `SituacaoNF`, `StatusAnaliseData`, `CNPJRaizTransp`).
-#   3. Aplicar corretamente as regras de negócio (datas, desambiguação, precedência).
-#   4. Extrair parâmetros de ordenação (`SortColumn`, `SortDirection`).
-#   5. Lidar com consultas vagas ou fora de escopo (retornando JSON nulo/erro API).
+# Este arquivo unifica múltiplos roteiros de teste com EXPECTATIVAS DE SUCESSO (|| JSON).
+# O script debug_runner.py usará o JSON após o '||' para validar se a IA acertou.
 #
-# Metodologia:
-# Os testes são organizados em suítes lógicas, começando com filtros simples e
-# progredindo para combinações complexas e casos de borda. Cada suíte tem um
-# objetivo claro e descreve o resultado JSON esperado (ou comportamento da API).
+# Variáveis Dinâmicas Disponíveis:
+# {today}, {yesterday}, {last_week_start}, {last_week_end}, 
+# {week_start}, {week_end}, {month_start}, {month_end}
 #
 # ====================================================================================
 # ====================================================================================
@@ -27,222 +18,153 @@
 # ====================================================================================
 # Suíte 1: Busca por Nota Fiscal Específica
 # ------------------------------------------------------------------------------------
-# Objetivo: Validar a extração correta do número da NF, priorizando-o sobre
-#           outros filtros conforme a regra de negócio.
-# Resultado Esperado: JSON com APENAS o campo `NF` preenchido, todos os demais `null`.
+# Objetivo: Validar a extração correta do número da NF e prioridade.
 # ====================================================================================
-me mostre a nota fiscal 55432
-qual a nf 12345
-nf 98765
+me mostre a nota fiscal 55432 || {"NF": 55432}
+qual a nf 12345 || {"NF": 12345}
+nf 98765 || {"NF": 98765}
 
 
 # ====================================================================================
 # Suíte 2: Filtros por Entidades de Negócio Principais
 # ------------------------------------------------------------------------------------
-# Objetivo: Validar a extração individual de cada filtro de entidade textual ou
-#           categórica principal (`Cliente`, `Transportadora`, `Operacao`, `CNPJRaizTransp`).
-# Resultado Esperado: JSON com o campo testado preenchido e os demais `null` (exceto datas padrão se aplicável).
+# Objetivo: Validar a extração de Cliente, Transportadora, Operacao, CNPJ.
 # ====================================================================================
 # Teste @Cliente
-notas do cliente BEXX
+notas do cliente BEXX || {"Cliente": "BEXX"}
 
 # Teste @Transportadora
-notas da transportadora RápidoLog
+notas da transportadora RápidoLog || {"Transportadora": "RápidoLog"}
 
 # Teste @Operacao
-notas com operação InBound-IPO
-me mostre as operações OutBound-SPO # Testando outro valor
+notas com operação InBound-IPO || {"Operacao": "InBound-IPO"}
+me mostre as operações OutBound-SPO || {"Operacao": "OutBound-SPO"}
 
 # Teste @CNPJRaizTransp
-notas com cnpj raiz da transportadora 12345678
+notas com cnpj raiz da transportadora 12345678 || {"CNPJRaizTransp": "12345678"}
 
 
 # ====================================================================================
 # Suíte 3: Filtros Geográficos (UF e Cidade)
 # ------------------------------------------------------------------------------------
-# Objetivo: Validar a extração de `UFDestino` e `CidadeDestino`, incluindo a regra
-#           de não inferência (Manaus->UF null), a priorização de UF sobre cidade
-#           ambígua (São Paulo->UF SP) e a extração correta com "cidade de".
-# Resultado Esperado: JSON com os campos geográficos corretos preenchidos.
+# Objetivo: Validar UF, Cidade e regras de ambiguidade.
 # ====================================================================================
 # Teste @UFDestino (Direto)
-notas para o estado de São Paulo
+notas para o estado de São Paulo || {"UFDestino": "SP"}
 
 # Teste @CidadeDestino (Sem Inferência de UF)
-me mostre as notas para Manaus
+me mostre as notas para Manaus || {"CidadeDestino": "Manaus", "UFDestino": null}
 
 # Teste Ambiguidade (Cidade vs UF -> Prioriza UF)
-notas para São Paulo
+notas para São Paulo || {"UFDestino": "SP"}
 
 # Teste Especificidade ("cidade de")
-mostre as notas para a cidade de São Paulo
+mostre as notas para a cidade de São Paulo || {"CidadeDestino": "São Paulo"}
 
 # Teste Combinação Explícita (Cidade + UF)
-mostre as notas para Uberlândia em Minas Gerais
+mostre as notas para Uberlândia em Minas Gerais || {"CidadeDestino": "Uberlândia", "UFDestino": "MG"}
 
 
 # ====================================================================================
-# Suíte 4: Filtros Temporais (Datas Relativas, Absolutas e Períodos)
+# Suíte 4: Filtros Temporais (Datas Relativas e Períodos)
 # ------------------------------------------------------------------------------------
-# Objetivo: Validar a interpretação de termos temporais relativos ("hoje", "ontem",
-#           "semana passada", "esta semana", "este mês"), absolutos (DD/MM/AAAA)
-#           e intervalos explícitos, preenchendo `DE` e `ATE` corretamente.
-#           (Assume data de teste ~22/10/2025 para validar semanas)
-# Resultado Esperado: JSON com `DE` e `ATE` preenchidos corretamente. `TipoData`
-#                     também deve ser preenchido se associado a um evento.
+# Objetivo: Validar tradução de tempo relativo para datas ISO.
 # ====================================================================================
 # Datas Relativas Simples
-quais notas foram entregues hoje?
-mostre o que foi emitido ontem
-notas com data de agenda para amanhã?
+quais notas foram entregues hoje? || {"TipoData": "2", "DE": "{today}", "ATE": "{today}"}
+mostre o que foi emitido ontem || {"TipoData": "3", "DE": "{yesterday}", "ATE": "{yesterday}"}
+notas com data de agenda para amanhã? || {"TipoData": "1"}
 
 # Períodos Relativos
-o que foi baixado na última semana?
-notas emitidas nos últimos 7 dias # Similar a 'última semana' dependendo do dia
-notas emitidas nesta semana
-o que tem previsão real para este mês?
+o que foi baixado na última semana? || {"TipoData": "6", "DE": "{last_week_start}", "ATE": "{last_week_end}"}
+notas emitidas nesta semana || {"TipoData": "3", "DE": "{week_start}", "ATE": "{week_end}"}
+o que tem previsão real para este mês? || {"TipoData": "5", "DE": "{month_start}", "ATE": "{month_end}"}
 
-# Intervalos Absolutos e Formatos
-notas previstas entre 1 e 15 de setembro de 2025
-o que foi entregue de 01/09/2025 até 10/09/2025
+# Intervalos Absolutos
+notas previstas entre 1 e 15 de setembro de 2025 || {"TipoData": "4", "DE": "2025-09-01", "ATE": "2025-09-15"}
 
 
 # ====================================================================================
 # Suíte 5: Eventos de Data (Foco em @TipoData)
 # ------------------------------------------------------------------------------------
-# Objetivo: Isolar e validar o mapeamento correto de cada palavra-chave de evento
-#           para o campo `TipoData` quando combinada com um período de tempo.
-# Resultado Esperado: JSON com `TipoData` correto e `DE`/`ATE` correspondentes.
+# Objetivo: Mapeamento de palavras-chave para TipoData numérico.
 # ====================================================================================
-# TipoData = '1' (agenda)
-notas com data de agenda para hoje
-
-# TipoData = '2' (entregue)
-# (Já testado em Suíte 4: "entregues hoje?")
-
-# TipoData = '3' (emitido)
-# (Já testado em Suíte 4: "emitido ontem", "emitidas nesta semana")
-
-# TipoData = '4' (previsto) - Genérico
-quais notas têm entrega prevista para amanhã? # Foco no TipoData '4' e datas
-# (Nota: Diferente de "notas previstas para amanhã" que foca StatusAnaliseData)
-
-# TipoData = '5' (previsão real)
-me mostre as notas com previsão real para hoje
-
-# TipoData = '6' (baixada)
-# (Já testado em Suíte 4: "baixado na última semana")
+notas com data de agenda para hoje || {"TipoData": "1"}
+me mostre as notas com previsão real para hoje || {"TipoData": "5"}
+quais notas têm entrega prevista para amanhã? || {"TipoData": "4"}
 
 
 # ====================================================================================
 # Suíte 6: Estado Logístico (Foco em @SituacaoNF)
 # ------------------------------------------------------------------------------------
-# Objetivo: Isolar e validar o mapeamento correto dos termos de estado logístico
-#           atual para o campo `SituacaoNF`, incluindo a desambiguação de "entregue".
-# Resultado Esperado: JSON com `SituacaoNF` correto e datas `null`.
+# Objetivo: Mapeamento de status físico.
 # ====================================================================================
-# SituacaoNF = 'TRÂNSITO'
-quais notas estão em trânsito?
-notas rodando # Testando sinônimo
-
-# SituacaoNF = 'RETIDA'
-me mostre as notas retidas
-quais notas foram retidas? # Variação
-
-# SituacaoNF = 'ENTREGUE' (Desambiguação vs TipoData)
-notas com status entregue
-me mostre as notas com situação logística ENTREGUE # Testando frase canônica
+quais notas estão em trânsito? || {"SituacaoNF": "TRÂNSITO"}
+notas rodando || {"SituacaoNF": "TRÂNSITO"}
+me mostre as notas retidas || {"SituacaoNF": "RETIDA"}
+notas com status entregue || {"SituacaoNF": "ENTREGUE"}
 
 
 # ====================================================================================
 # Suíte 7: Análise de Performance (Foco em @StatusAnaliseData)
 # ------------------------------------------------------------------------------------
-# Objetivo: Isolar e validar o mapeamento correto dos termos de performance de prazo
-#           para o campo `StatusAnaliseData`, a regra de precedência sobre `TipoData`,
-#           e a desambiguação de "entregue".
-# Resultado Esperado: JSON com `StatusAnaliseData` correto e `TipoData` `null`.
+# Objetivo: Mapeamento de performance e regras de precedência.
 # ====================================================================================
-# StatusAnaliseData = 'ATRASO'
-quais notas estão com atraso?
-entregas com atraso # Testando sinônimo
-quais notas estão com status de análise ATRASO? # Testando frase canônica
-
-# StatusAnaliseData = 'DIA SEGUINTE'
-notas previstas para amanhã
-notas com entrega prevista para o dia seguinte # Testando sinônimo
-
-# StatusAnaliseData = 'DO DIA'
-notas previstas para hoje
-me mostre as notas com status DO DIA # Variação
-
-# StatusAnaliseData = 'FUTURO'
-me mostre as notas com análise de performance FUTURO
-
-# StatusAnaliseData = 'PREVISTO PARA 2 DIAS'
-quais notas estão previstas para daqui a 2 dias?
-
-# StatusAnaliseData = 'ENTREGUE' (Desambiguação vs TipoData e SituacaoNF)
-liste as notas cuja análise de performance foi ENTREGUE
+quais notas estão com atraso? || {"StatusAnaliseData": "ATRASO"}
+entregas com atraso || {"StatusAnaliseData": "ATRASO"}
+notas previstas para amanhã || {"StatusAnaliseData": "DIA SEGUINTE"}
+notas previstas para hoje || {"StatusAnaliseData": "DO DIA"}
+me mostre as notas com análise de performance FUTURO || {"StatusAnaliseData": "FUTURO"}
+quais notas estão previstas para daqui a 2 dias? || {"StatusAnaliseData": "PREVISTO PARA 2 DIAS"}
+liste as notas cuja análise de performance foi ENTREGUE || {"StatusAnaliseData": "ENTREGUE"}
 
 
 # ====================================================================================
 # Suíte 8: Ordenação Dinâmica
 # ------------------------------------------------------------------------------------
-# Objetivo: Validar a extração correta de `SortColumn` e `SortDirection`.
-# Resultado Esperado: JSON com `SortColumn` e `SortDirection` preenchidos.
+# Objetivo: SortColumn e SortDirection.
 # ====================================================================================
-# SortColumn='data_entrega', SortDirection='DESC'
-ordenar pela data de entrega mais recente
-
-# SortColumn='valor_nf', SortDirection='DESC'
-ordenar pelo valor mais caro
-notas rodando ordenadas pelo mais caro # Combinado com filtro
-
-# SortColumn='data_emissao', SortDirection='ASC'
-ordenar pela data de emissão mais antiga
+ordenar pela data de entrega mais recente || {"SortColumn": "data_entrega", "SortDirection": "DESC"}
+ordenar pelo valor mais caro || {"SortColumn": "valor_nf", "SortDirection": "DESC"}
+ordenar pela data de emissão mais antiga || {"SortColumn": "data_emissao", "SortDirection": "ASC"}
 
 
 # ====================================================================================
 # Suíte 9: Combinação Complexa de Filtros (Stress Tests)
 # ------------------------------------------------------------------------------------
-# Objetivo: Garantir que a IA consegue lidar com múltiplos filtros de diferentes
-#           tipos (entidade, data, status, localização, ordenação) simultaneamente.
-# Resultado Esperado: JSON com todos os campos correspondentes preenchidos.
+# Objetivo: Testar a capacidade de preencher múltiplos campos.
 # ====================================================================================
-# Combinação: Operacao, Cliente, UF, Ordenação
-notas de operação OutBound-RIO para o cliente BEXX no estado do Rio de Janeiro, ordenadas pela data de entrega mais recente
+notas de operação OutBound-RIO para o cliente BEXX no estado do Rio de Janeiro || {"Operacao": "OutBound-RIO", "Cliente": "BEXX", "UFDestino": "RJ"}
 
-# Combinação: Transportadora, Cidade, TipoData, StatusAnaliseData, Período
-quais notas da transportadora RápidoLog para Manaus foram baixadas na semana passada e estão com análise ATRASO?
+quais notas da transportadora RápidoLog para Manaus foram baixadas na semana passada? || {"Transportadora": "RápidoLog", "CidadeDestino": "Manaus", "TipoData": "6", "DE": "{last_week_start}"}
 
-# Combinação: TipoData, Período, UF, SituacaoNF, Ordenação
-liste as notas emitidas hoje para SP que estão em trânsito, ordenadas pelo menor valor
+notas em trânsito e com atraso || {"SituacaoNF": "TRÂNSITO", "StatusAnaliseData": "ATRASO"}
 
-# Combinação: SituacaoNF, StatusAnaliseData (Coexistência)
-notas em trânsito e com atraso
-
-# Combinação: TipoData, Período, SituacaoNF (Coexistência)
-notas emitidas hoje que estão em trânsito
-
-# Combinação: TipoData, Período, StatusAnaliseData (Coexistência)
-notas baixadas na semana passada e que estão com atraso
+notas emitidas hoje que estão em trânsito || {"TipoData": "3", "DE": "{today}", "SituacaoNF": "TRÂNSITO"}
 
 
 # ====================================================================================
-# Suíte 10: Consultas Vagas, Irrelevantes ou Fora de Escopo (Fallback)
+# Suíte 10: Negação e Exclusão (Novo)
 # ------------------------------------------------------------------------------------
-# Objetivo: Assegurar que a IA retorna um JSON nulo (resultando em erro 400 na API)
-#           para perguntas sem filtros úteis ou fora do domínio de negócios.
-# Resultado Esperado: A API deve retornar HTTP 400 Bad Request.
+# Objetivo: Garantir que a IA ignora filtros negativos conforme regra.
 # ====================================================================================
-qual o clima para hoje?
-me mostre as notas
-qual o status da entrega?
-quais são os clientes?
-liste as transportadoras
-notas fiscais
+notas que não sejam de SP || {"UFDestino": null}
+notas exceto as retidas || {"SituacaoNF": null}
 
 
 # ====================================================================================
-# FIM DO ROTEIRO DE TESTES MESTRE
+# Suíte 11: Ambiguidade Real (Novo)
+# ------------------------------------------------------------------------------------
+# Objetivo: Testar limites da interpretação.
 # ====================================================================================
+notas para Rio de Janeiro || {"UFDestino": "RJ"}
+notas para a cidade do Rio de Janeiro || {"CidadeDestino": "Rio de Janeiro"}
+
+
+# ====================================================================================
+# Suíte 12: Consultas Vagas (Fallback)
+# ------------------------------------------------------------------------------------
+# Objetivo: Garantir retorno nulo.
+# ====================================================================================
+qual o clima para hoje? || {"NF": null, "Cliente": null}
+me mostre as notas || {"NF": null, "Cliente": null}
