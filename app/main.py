@@ -254,4 +254,4 @@ async def debug_query(request: QueryRequest):
         logger.error(f"Erro inesperado na execução da cadeia de debug para a query: '{request.query}'", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Erro interno ao processar a query com a IA: {str(e)}")
 
-# Comando para rodar a aplicação: uvicorn app.main:app --reload --port 5001
+# Comando para rodar a aplicação: uvicorn app.main:app --reload --port 5001 --reload-dir app
